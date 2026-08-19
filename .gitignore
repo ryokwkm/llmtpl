@@ -1,0 +1,21 @@
+# ビルド成果物（バイナリは ~/.local/bin へ出す。リポジトリ内には置かない）
+/llmtpl
+*.test
+*.out
+
+# エディタ・OS
+.idea/
+.DS_Store
+
+# 一時ファイル・作業ログ
+*.log
+.probe/
+
+progress.md
+
+# examples/ を手で動かしたときに出る生成物（入力だけを追跡する）
+examples/*/proj/.claude/CLAUDE.md
+examples/*/proj/.claude/settings.json
+examples/*/.llmtpl-state.json
+examples/*/proj/.claude/.llmtpl-state.json
+examples/*/.archive/

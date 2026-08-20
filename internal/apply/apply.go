@@ -442,14 +442,17 @@ func (x *run) target(tmplRel string, hashes map[string]string) (TargetReport, er
 	var err error
 	trackHash := false
 	switch {
-	case strings.HasSuffix(base, ".local.json"):
-		// settings.local.json は Claude Code に読まれるが、/model・/permissions の書き込み先
-		// （マシンローカルのライブ状態）なので、出力先に関わらず生成物にしない（設計 doc §10）
-		return tr, fmt.Errorf("%s は生成対象外です（マシンローカルのライブ状態のため）: %s", base, tmplPath)
-	case strings.Contains(base, ".local.") && filepath.Dir(name) != ".":
+	// settings.local.json（*.local.json）は 2026-08-20 に生成対象へ変えた。Claude Code が
+	// /model・/permissions 等で書き込むライブファイルだが、生成物にするか（= 実行中の書き込みを
+	// 次回 apply で退避し宣言を正とするか）は .tmpl を置くターゲット作者の判断で、置かなければ
+	// 従来どおり触らない。手書き運用では「フラグを OFF に戻しても permission が残る」取り違えが
+	// 構造的に起きるため、宣言的管理を opt-in で選べるようにした（グローバル settings.json を
+	// 非目標から外した 2026-07-30 と同型の転換。経緯と代償は設計 doc §5.3 / §10）
+	case strings.Contains(base, ".local.") && strings.HasSuffix(base, ".md") && filepath.Dir(name) != ".":
 		// Claude Code の Local instructions は <repo>/CLAUDE.local.md だけで、
 		// <repo>/.claude/CLAUDE.local.md は読まれない。読まれない生成物を黙って作らず loud に落とす。
 		// **判定材料はその生成物の実出力先**（ターゲット直下かどうか）であって、ターゲットの名前ではない。
+		// settings.local.json はこの逆（.claude/ 配下が読まれる位置）なので .md に限定する。
 		return tr, fmt.Errorf("%s は %s/ 配下では生成対象外です（Claude Code が読まない位置のため。%s はターゲット直下へ置いてください）: %s",
 			base, filepath.Dir(name), filepath.Base(tmplPath), tmplPath)
 	case strings.HasSuffix(base, ".md"):

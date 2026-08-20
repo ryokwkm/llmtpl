@@ -150,7 +150,10 @@ JSON はコメントを書けないので、`.llmtpl-state.json`（生成物の�
 ### 制約
 
 - 生成対象は `.md` と `.json` だけ（他の拡張子はスキップして報告する）
-- `settings.local.json` は生成しない（`/model` 等が書くライブ状態なので分断させない）
+- `settings.local.json` の生成は opt-in（`settings.local.json.tmpl` を置いたターゲットだけ）。
+  Claude Code が `/model` や `/permissions` で書き込むライブファイルなので、生成物にすると
+  その書き込みは次回 apply でドリフト検出に引っかかり `.archive/` へ退避される（宣言が正になる）。
+  恒久化したい変更は `.tmpl` 側へ書き戻すこと。置かなければ従来どおり触らない
 - `<repo>/.claude/CLAUDE.local.md` も生成しない（Claude Code が読まない位置。リポジトリルート直下に
   `CLAUDE.local.md.tmpl` を置けばそこがターゲットになる）
 - `--mode copy` は未実装（所有権の判定が symlink の字面に依存している）

@@ -1013,18 +1013,24 @@ func TestRun_CLAUDE_local_mdはリポジトリルートなら生成できる(t *
 	}
 }
 
-// settings.local.json は .claude/ 配下でも Claude Code に読まれるが、/model・/permissions の
-// 書き込み先（ライブ状態）なので、置き場所に関わらず生成物にしない
-func TestRun_settings_local_jsonは非対応エラー(t *testing.T) {
+// settings.local.json は Claude Code が /model・/permissions で書き込むライブファイルだが、
+// .tmpl を置いたターゲットは生成物として宣言的に管理できる（opt-in・2026-08-20 に方針転換）。
+// バンドル断片との deep merge も settings.json と同じに効く。
+func TestRun_settings_local_jsonは生成できてバンドル断片とマージされる(t *testing.T) {
 	f := newFixture(t)
-	f.targetFile(t, "settings.local.json.tmpl", "{}\n")
+	f.bundleFile(t, "loop", "settings.local.json.tmpl",
+		`{"permissions": {"allow": ["Bash(go *)"]}}`)
+	f.targetFile(t, "settings.local.json.tmpl",
+		`{"permissions": {"allow": ["Bash(make *)"], "deny": ["Bash(git push *)"]}}`)
+	f.confFile(t, "loop = true\n")
 
-	err := f.applyErr(t)
-	if err == nil {
-		t.Fatal("エラーを期待したが nil")
-	}
-	if !strings.Contains(err.Error(), "settings.local.json") {
-		t.Errorf("メッセージが不正: %v", err)
+	f.run(t, Options{})
+	got := f.generated(t, "settings.local.json")
+
+	for _, want := range []string{`"Bash(go *)"`, `"Bash(make *)"`, `"Bash(git push *)"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s が生成物に無い:\n%s", want, got)
+		}
 	}
 }
 

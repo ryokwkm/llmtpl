@@ -294,13 +294,20 @@ CI に置けるようになる。
 
 | コマンド | 用途 |
 |---|---|
+| `llmtpl` | cwd のフラグをチェックボックスで選んで apply する。端末以外（パイプ・CI）から呼ぶと help |
 | `llmtpl apply [dir...]` | 生成 + リンク合成（既定は cwd とその配下） |
 | `llmtpl apply --dry-run` | 何を書き / 消すかを表示して終わる |
 | `llmtpl check [dir...]` | 生成物が最新かを検査。**差分があれば exit 2**（CI / hook 向け） |
 | `llmtpl status [dir...]` | ターゲット × フラグの実効値マトリクス |
 | `llmtpl bundles` | バンドル一覧（`bundle.conf` の description つき。旧名 `flags` も可） |
 
-全オプションは `llmtpl <cmd> --help` が正。終了コードは **0 正常 / 1 エラー / 2 `check` で差分あり**。
+全オプションは `llmtpl <cmd> --help` が正。終了コードは
+**0 正常 / 1 エラー / 2 `check` で差分あり / 130 対話モードを中止した**。
+
+引数なしで叩くと、バンドルルートの在り処と、全フラグを `bundle.conf` の説明つき・現在値つきで
+出す。確定すると `llmtpl.conf` を書き換えてそのディレクトリだけ apply する。conf は
+**触る必要のある行の値だけ**を書き換えるので、フラグに添えたコメントは残る。詳細は
+[reference](docs/reference.ja.md#対話モード)。
 
 バンドル置き場は各ターゲットから**親を辿って自動で見つかる**（`llm-tpl/` を親方向に置いて使う限り
 何も書かなくてよい）。親方向に無い場所に置くときは `llmtpl.conf` の予約キー `bundle_root` でパスを明示する。
@@ -325,8 +332,10 @@ make vet
 make fmt
 ```
 
-`internal/` の構成は「純粋な部品（`render` / `mergejson` / `fileout` / `link`）＋ それらを束ねる
-オーケストレータ（`apply`）」で、表示と終了コードだけが `main` にある。
+`internal/` の構成は「純粋な部品（`render` / `mergejson` / `fileout` / `link` / `confedit`）＋
+それらを束ねるオーケストレータ（`apply`）」で、表示と終了コードだけが `main` にある。
+対話モードは TUI の依存を `interactive.go` 1 本に閉じ込め、3 つの問いかけを関数で受け取るので、
+端末が無くてもフロー全体をテストできる。
 テストは fixture ベースで、`testdata/golden/` が実サイズの入力に対する生成物をバイト単位で固定する。
 
 ## License

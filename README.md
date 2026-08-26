@@ -289,6 +289,7 @@ are all in the [reference](docs/reference.md). None of them are needed to get go
 
 | Command | What it does |
 |---|---|
+| `llmtpl` | tick the flags for the current directory in a checkbox list, then apply. Prints the help instead when it is not run from a terminal |
 | `llmtpl apply [dir...]` | generate and link (defaults to the current directory and below) |
 | `llmtpl apply --dry-run` | print what would be written and removed, then stop |
 | `llmtpl check [dir...]` | check that generated files are current. **Exit 2 on differences** (for CI and hooks) |
@@ -296,7 +297,12 @@ are all in the [reference](docs/reference.md). None of them are needed to get go
 | `llmtpl bundles` | list bundles, with the description from `bundle.conf` |
 
 `llmtpl <cmd> --help` is authoritative for options. Exit codes: **0 fine, 1 error, 2 `check` found
-differences**.
+differences, 130 the interactive mode was aborted**.
+
+With no arguments it shows where the bundle root was found, lists every flag with its `bundle.conf`
+description and its current value, and — once you confirm — edits `llmtpl.conf` and runs apply for
+that one directory. It rewrites **only the values of the lines it has to touch**, so the comments
+around your flags survive. Details are in the [reference](docs/reference.md#interactive-mode).
 
 The bundle directory is **found by walking up** from each target, so keeping `llm-tpl/` somewhere
 above them means writing nothing. If it lives elsewhere, name the path with the reserved
@@ -324,8 +330,10 @@ make vet
 make fmt
 ```
 
-`internal/` is pure pieces (`render`, `mergejson`, `fileout`, `link`) plus an orchestrator (`apply`)
-that binds them; only presentation and exit codes live in `main`. Tests are fixture-based, and
+`internal/` is pure pieces (`render`, `mergejson`, `fileout`, `link`, `confedit`) plus an
+orchestrator (`apply`) that binds them; only presentation and exit codes live in `main`. The
+interactive mode keeps its TUI dependency in `interactive.go` alone and takes the three prompts as
+functions, so the whole flow is testable without a terminal. Tests are fixture-based, and
 `testdata/golden/` pins generated output byte for byte against realistic input.
 
 ## License

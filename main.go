@@ -1,7 +1,7 @@
 // llmtpl は LLM 設定（CLAUDE.md / .claude 配下）をフラグ単位のバンドルから合成する CLI。
 //
 // このファイルは表示と終了コードだけを担う（何が差分かの判断は apply.Report.Diffs）。
-// 終了コード: 0 正常 / 1 エラー / 2 check で差分あり。
+// 終了コード: 0 正常 / 1 エラー / 2 check で差分あり / 130 対話モードを中止した。
 //
 // CLI は cobra（姉妹ツール dq と同じ）。位置引数とオプションの混在・サブコマンド別の help・
 // シェル補完（llmtpl completion zsh）は cobra 側の機能に任せる。
@@ -41,6 +41,9 @@ func newRootCmd() *cobra.Command {
 		Version:       version,
 		SilenceUsage:  true, // 実行時エラーで usage を撒かない（main が 1 行で出す）
 		SilenceErrors: true,
+		// 引数なしで叩かれたときだけ対話モードへ入る。cobra は Run を持つ root でも
+		// 未知のサブコマンド名はエラーにするので（legacyArgs）、`llmtpl typo` の挙動は変わらない
+		RunE: func(cmd *cobra.Command, _ []string) error { return runInteractive(cmd) },
 	}
 	root.AddCommand(
 		newApplyCmd(false),
@@ -59,8 +62,11 @@ func (e diffErr) Error() string {
 }
 
 func exitCode(err error) int {
-	if _, ok := err.(diffErr); ok {
+	switch err.(type) {
+	case diffErr:
 		return 2
+	case canceledErr:
+		return 130 // SIGINT の慣習に合わせる（人が中止したのであってエラーではない）
 	}
 	return 1
 }

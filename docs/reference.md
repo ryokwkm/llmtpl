@@ -128,6 +128,45 @@ newlines only; it never touches the front.
 
 ## Living with it
 
+### Interactive mode
+
+`llmtpl` with no arguments opens a checkbox list of every flag for the current directory, then
+writes `llmtpl.conf` and applies.
+
+**It only starts when stdin and stdout are both terminals.** Behind a pipe, a redirect, or in CI it
+prints the help and exits 0, exactly as it did before the mode existed — a form waiting for input
+that never comes would hang a script.
+
+**Aborting (Esc or Ctrl-C) exits 130** and changes nothing. There is no `q` shortcut: the list is
+filterable by typing, so a letter key cannot also mean quit.
+
+**Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and
+would regenerate sibling targets you did not just edit; the interactive mode edits one conf, so it
+applies one target and tells you how many others exist.
+
+**If the directory has no `llmtpl.conf`**, it says so and asks whether to create one. It counts the
+targets below first and warns when there are any — creating a conf at, say, the root of a config
+repository turns that root into a target too. Nothing is written until the final confirmation, so
+aborting midway leaves no file behind. Answering yes always produces the file even when every flag
+stays at its default, because the presence of `llmtpl.conf` is what makes a directory a target.
+
+The conf is edited in place, never regenerated, under four rules:
+
+| The flag | What happens |
+|---|---|
+| has a line, already the wanted value | untouched |
+| has a line with the other value | **only the value characters** are replaced, so alignment, indentation, and trailing whitespace survive |
+| has no line, and the default already gives the wanted value | nothing is written |
+| has no line, and the default gives the other value | `name = true\|false` is appended |
+
+**No line is ever deleted.** An explicit `false` and a missing line mean the same thing to the
+parser, but removing the line would strand the comment above it. For the same reason a duplicate key
+has only its **last** line rewritten (the parser takes the last one, so that is the one that
+decides), and `bundle_root` is never treated as a flag.
+
+Writing less than you could is deliberate: every line in `llmtpl.conf` is one more place a later
+change to `defaults.conf` fails to reach.
+
 ### CLI language
 
 Every CLI message is bilingual. The language is picked from the first non-empty of

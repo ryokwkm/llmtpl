@@ -12,15 +12,17 @@ import "strings"
 
 // Catalog は llmtpl が出力する全文言。パッケージ単位で入れ子にする。
 type Catalog struct {
-	State   StateMsg
-	JSON    JSONMsg
-	Render  RenderMsg
-	FileOut FileOutMsg
-	Link    LinkMsg
-	Flags   FlagsMsg
-	Bundle  BundleMsg
-	Apply   ApplyMsg
-	Cmd     CmdMsg
+	State       StateMsg
+	JSON        JSONMsg
+	Render      RenderMsg
+	FileOut     FileOutMsg
+	Link        LinkMsg
+	Flags       FlagsMsg
+	Bundle      BundleMsg
+	Apply       ApplyMsg
+	ConfEdit    ConfEditMsg
+	Cmd         CmdMsg
+	Interactive InteractiveMsg
 }
 
 // M は選択済みのカタログ。プロセス起動時に環境変数から決まる。

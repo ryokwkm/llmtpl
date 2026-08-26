@@ -137,17 +137,19 @@ writes `llmtpl.conf` and applies.
 prints the help and exits 0, exactly as it did before the mode existed — a form waiting for input
 that never comes would hang a script.
 
-**Aborting (Esc or Ctrl-C) exits 130** and changes nothing. There is no `q` shortcut: the list is
-filterable by typing, so a letter key cannot also mean quit.
+**Aborting (Esc or Ctrl-C) exits 130** and changes nothing. huh binds only Ctrl-C by default, so Esc
+is added; filtering is turned off to free it (huh uses Esc to set and clear the filter).
 
 **Each row is truncated to one line.** Descriptions from `bundle.conf` are often long; a row that
 wrapped would take more screen lines than the list reckons with, pushing the first bundle off the
 top. Only the description is shortened — the flag name and the default-on note always stay. Widen
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
-⚠️ **When the terminal is shorter than the list, it scrolls and shows no scrollbar.** The first
-entries may simply be above the fold, so press ↑ if the count looks wrong (`llmtpl bundles` prints
-all of them, which is the reliable way to compare).
+**The list runs in the alternate screen.** Drawn on the normal screen, the lines printed before it
+and the shell prompt eat into the terminal height, and **the first entries get pushed out of view**.
+The alternate screen gives the form the whole window, so earlier output cannot cost it any rows.
+⚠️ Even then, more bundles than terminal rows makes huh scroll, **with no scrollbar**. Press ↑ if
+the count looks wrong (`llmtpl bundles` prints all of them).
 
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and
 would regenerate sibling targets you did not just edit; the interactive mode edits one conf, so it

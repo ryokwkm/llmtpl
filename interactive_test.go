@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -459,6 +460,25 @@ func TestOptionLabel_既定ONの注記は説明より優先(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, msg.M.Interactive.DefaultOnNote) {
 		t.Errorf("既定 ON の注記が落ちている: %q", got)
+	}
+}
+
+// 画面には「esc 中止」と出しているので、そのとおり効くこと。huh の既定は ctrl+c だけで、
+// esc は割り当てが無い（2026-08-26 に実機で「esc が効かない」と指摘されて発覚）。
+func TestKeymap_escとctrlCで中止できる(t *testing.T) {
+	keys := keymap().Quit.Keys()
+	for _, want := range []string{"esc", "ctrl+c"} {
+		if !slices.Contains(keys, want) {
+			t.Errorf("%q が中止に割り当てられていない: %v", want, keys)
+		}
+	}
+}
+
+// esc を中止に使うので、フィルタ（esc をフィルタ設定・解除に使う）は切っておく必要がある。
+// 画面の文言と実装が食い違わないよう、タイトルが esc を案内していることも見る。
+func TestSelectTitle_escを案内している(t *testing.T) {
+	if !strings.Contains(msg.M.Interactive.SelectTitle, "esc") {
+		t.Errorf("タイトルが esc を案内していない: %q", msg.M.Interactive.SelectTitle)
 	}
 }
 

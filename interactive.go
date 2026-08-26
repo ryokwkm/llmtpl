@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -180,8 +182,19 @@ func askConfirm(title string) (bool, error) {
 			Affirmative(msg.M.Interactive.Affirmative).
 			Negative(msg.M.Interactive.Negative).
 			Value(&ok),
-	)).WithTheme(theme()).Run()
+	)).WithTheme(theme()).WithKeyMap(keymap()).Run()
 	return ok, err
+}
+
+// keymap は既定に **esc での中止**を足したもの。
+//
+// huh の既定は中止が `ctrl+c` だけで、esc は割り当てが無い（フィルタ中のみフィルタ解除に使う）。
+// 画面には「esc 中止」と出しているので、そのとおり効かないと嘘になる。フィルタは
+// `Filterable(false)` で切ってあるので esc は空いている。
+func keymap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
+	return km
 }
 
 // theme は既定（ThemeCharm）の印を `[x]` / `[ ]` へ差し替えたもの。
@@ -269,16 +282,28 @@ func askFlags(items []item) ([]string, error) {
 	// Height は指定しない。未設定なら huh が選択肢の数に合わせて全部を 1 画面へ収める
 	// （固定値を渡すと title/description の分を引いた上で下限に丸められ、狭い端末で崩れる）。
 	//
-	// **Description も置かない**。huh が最下部に出す help（`x toggle / enter submit / …`）と
-	// 内容が重なるうえ、1 行使うぶん一覧が縦に伸びる。**端末の高さが足りないと huh は黙って
-	// スクロールし、先頭のバンドルが画面の外へ出る**（スクロールバーが出ないので消えて見える）
+	// **Description も置かない**。huh が最下部に出す help と内容が重なるうえ、1 行ぶん縦に伸びる。
+	//
+	// **Filterable(false)**: 14 個程度に絞り込みは要らず、切ると `/` と esc が空く。
+	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
 	var picked []string
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title(msg.M.Interactive.SelectTitle).
 			Options(opts...).
+			Filterable(false).
 			Value(&picked),
-	)).WithTheme(theme()).Run()
+	)).WithTheme(theme()).WithKeyMap(keymap()).
+		// 🔴 **代替画面で出す**。huh は通常画面へ描くので、フォームの手前に出した行
+		// （バンドルルート等）とシェルのプロンプトが端末の高さを食い、その分だけ一覧の先頭が
+		// 押し出される（2026-08-26 に agenttrail が消える形で 2 回踏んだ）。代替画面なら
+		// フォームが画面を丸ごと使えるので、手前の出力に高さを削られない。
+		// **WithProgramOptions は既定を置き換える**ので、huh の既定 2 つを明示的に渡し直す。
+		WithProgramOptions(
+			tea.WithOutput(os.Stderr),
+			tea.WithReportFocus(),
+			tea.WithAltScreen(),
+		).Run()
 	return picked, err
 }
 

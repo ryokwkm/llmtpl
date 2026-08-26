@@ -15,6 +15,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // Parse は JSON 断片をオブジェクトとして読む。label はエラーメッセージ用の出典表示。
@@ -23,11 +25,11 @@ func Parse(content []byte, label string) (map[string]any, error) {
 	dec.UseNumber() // 数値の字面を保つ
 	var v any
 	if err := dec.Decode(&v); err != nil {
-		return nil, fmt.Errorf("%s: JSON として読めません: %w", label, err)
+		return nil, fmt.Errorf(msg.M.JSON.NotJSON, label, err)
 	}
 	obj, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s: トップレベルはオブジェクト（{...}）である必要があります", label)
+		return nil, fmt.Errorf(msg.M.JSON.NotObject, label)
 	}
 	return obj, nil
 }
@@ -36,7 +38,7 @@ func Parse(content []byte, label string) (map[string]any, error) {
 func Format(v map[string]any) ([]byte, error) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("JSON の整形に失敗: %w", err)
+		return nil, fmt.Errorf(msg.M.JSON.FormatFailed, err)
 	}
 	return append(b, '\n'), nil
 }
@@ -79,7 +81,7 @@ func mergeValues(bv, ov any, label, path string) (any, error) {
 	case bArr && oArr:
 		return appendUnique(ba, oa)
 	case bObj || oObj || bArr || oArr:
-		return nil, fmt.Errorf("%s: キー %q の型が一致しません（既存: %s / 断片: %s）",
+		return nil, fmt.Errorf(msg.M.JSON.TypeMismatch,
 			label, path, typeName(bv), typeName(ov))
 	default:
 		return deepCopy(ov), nil // スカラーは後勝ち
@@ -94,7 +96,7 @@ func appendUnique(base, over []any) ([]any, error) {
 		for _, v := range list {
 			key, err := json.Marshal(v)
 			if err != nil {
-				return nil, fmt.Errorf("配列要素を比較できません: %w", err)
+				return nil, fmt.Errorf(msg.M.JSON.CannotCompare, err)
 			}
 			if seen[string(key)] {
 				continue
@@ -128,11 +130,11 @@ func deepCopy(v any) any {
 func typeName(v any) string {
 	switch v.(type) {
 	case map[string]any:
-		return "オブジェクト"
+		return msg.M.JSON.TypeObject
 	case []any:
-		return "配列"
+		return msg.M.JSON.TypeArray
 	default:
-		return "値"
+		return msg.M.JSON.TypeScalar
 	}
 }
 

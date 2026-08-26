@@ -19,9 +19,12 @@ package render
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"text/template"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // Options は 1 回のレンダリングに必要な入力。
@@ -43,7 +46,7 @@ type Result struct {
 // Render は Options に従ってテンプレを評価する。
 func Render(o Options) (Result, error) {
 	if o.TmplPath == "" {
-		return Result{}, fmt.Errorf("TmplPath が未指定です")
+		return Result{}, errors.New(msg.M.Render.NoTmplPath)
 	}
 
 	used := map[string]bool{}
@@ -52,7 +55,7 @@ func Render(o Options) (Result, error) {
 		// （ON のフラグが誰もその slot へ寄稿していないだけなので正常）
 		"slot": func(name string) (string, error) {
 			if name == "" {
-				return "", fmt.Errorf("slot 名が空です")
+				return "", errors.New(msg.M.Render.EmptySlotName)
 			}
 			used[name] = true
 			return o.Slots[name], nil
@@ -65,23 +68,23 @@ func Render(o Options) (Result, error) {
 	for _, dir := range o.PartialDirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.tmpl"))
 		if err != nil {
-			return Result{}, fmt.Errorf("partials の探索に失敗: %w", err)
+			return Result{}, fmt.Errorf(msg.M.Render.PartialsGlobFailed, err)
 		}
 		if len(matches) == 0 {
 			continue // 部品なし・ディレクトリ未作成は正常
 		}
 		if _, err := root.ParseFiles(matches...); err != nil {
-			return Result{}, fmt.Errorf("partials のパースに失敗: %w", err)
+			return Result{}, fmt.Errorf(msg.M.Render.PartialsParseFailed, err)
 		}
 	}
 
 	if o.Source != nil {
 		// Source は「名前 = filepath.Base(TmplPath)」のテンプレとして定義する（Execute の対象になる）
 		if _, err := root.Parse(string(o.Source)); err != nil {
-			return Result{}, fmt.Errorf("%s のパースに失敗: %w", o.TmplPath, err)
+			return Result{}, fmt.Errorf(msg.M.Render.SourceParseFailed, o.TmplPath, err)
 		}
 	} else if _, err := root.ParseFiles(o.TmplPath); err != nil {
-		return Result{}, fmt.Errorf("テンプレートのパースに失敗: %w", err)
+		return Result{}, fmt.Errorf(msg.M.Render.TemplateParseFailed, err)
 	}
 
 	var buf bytes.Buffer
@@ -90,7 +93,7 @@ func Render(o Options) (Result, error) {
 		buf.WriteByte('\n')
 	}
 	if err := root.Execute(&buf, o.Flags); err != nil {
-		return Result{}, fmt.Errorf("テンプレートの評価に失敗（未定義フラグ参照の可能性）: %w", err)
+		return Result{}, fmt.Errorf(msg.M.Render.ExecFailed, err)
 	}
 	return Result{Content: buf.Bytes(), UsedSlots: used}, nil
 }

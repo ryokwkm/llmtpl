@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // Options は書き出しの設定。
@@ -70,7 +72,7 @@ func Write(dest string, content []byte, o Options) (Result, error) {
 			return res, err
 		}
 		if err := os.WriteFile(backup, existing, 0o644); err != nil {
-			return res, fmt.Errorf("退避に失敗: %w", err)
+			return res, fmt.Errorf(msg.M.FileOut.ArchiveFailed, err)
 		}
 		res.Archived = backup
 	}
@@ -86,28 +88,28 @@ func Write(dest string, content []byte, o Options) (Result, error) {
 // 状態ファイルのように判定が不要なものはこれを直接使う（原子性の実装を 1 か所に保つ）。
 func WriteAtomic(dest string, content []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("%s: 親ディレクトリを作れません: %w", dest, err)
+		return fmt.Errorf(msg.M.FileOut.MkdirParentFailed, dest, err)
 	}
 	// CreateTemp なら中断した実行の残骸と衝突しない（pid 決め打ちは踏む余地がある）
 	tmp, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".tmp.*")
 	if err != nil {
-		return fmt.Errorf("%s: 一時ファイルを作れません: %w", dest, err)
+		return fmt.Errorf(msg.M.FileOut.TempCreateFailed, dest, err)
 	}
 	name := tmp.Name()
 	defer os.Remove(name) // 成功時は rename 済みなので無害
 
 	if _, err := tmp.Write(content); err != nil {
 		tmp.Close()
-		return fmt.Errorf("%s: 一時ファイルを書けません: %w", name, err)
+		return fmt.Errorf(msg.M.FileOut.TempWriteFailed, name, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("%s: 一時ファイルを閉じられません: %w", name, err)
+		return fmt.Errorf(msg.M.FileOut.TempCloseFailed, name, err)
 	}
 	if err := os.Chmod(name, perm); err != nil {
-		return fmt.Errorf("%s: 権限を設定できません: %w", name, err)
+		return fmt.Errorf(msg.M.FileOut.ChmodFailed, name, err)
 	}
 	if err := os.Rename(name, dest); err != nil {
-		return fmt.Errorf("%s: 置き換えに失敗: %w", dest, err)
+		return fmt.Errorf(msg.M.FileOut.ReplaceFailed, dest, err)
 	}
 	return nil
 }
@@ -120,10 +122,10 @@ func WriteAtomic(dest string, content []byte, perm os.FileMode) error {
 // 一意になるように付け、それでも衝突したら連番を付ける。
 func ArchivePath(archiveDir, label string) (string, error) {
 	if archiveDir == "" {
-		return "", fmt.Errorf("%s: 生成物でない実体があるのに退避先（ArchiveDir）が未設定です", label)
+		return "", fmt.Errorf(msg.M.FileOut.NoArchiveDir, label)
 	}
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
-		return "", fmt.Errorf("退避先を作れません: %w", err)
+		return "", fmt.Errorf(msg.M.FileOut.ArchiveDirCreateFailed, err)
 	}
 	base := label + ".bk." + time.Now().Format("20060102150405")
 	for i := 1; i <= 100; i++ {
@@ -135,7 +137,7 @@ func ArchivePath(archiveDir, label string) (string, error) {
 			return p, nil // 空いている
 		}
 	}
-	return "", fmt.Errorf("退避先の名前が埋まっています: %s/%s", archiveDir, base)
+	return "", fmt.Errorf(msg.M.FileOut.ArchiveNamesExhausted, archiveDir, base)
 }
 
 // Hash は内容のハッシュ（sha256 の 16 進）を返す。前回の生成物かどうかの判定に使う。

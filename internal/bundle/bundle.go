@@ -35,6 +35,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // バンドルのレイアウト語彙はこのパッケージが所有する（配布側 link・合成側 apply が参照する）。
@@ -61,7 +63,7 @@ const vcsDir = ".git"
 func overlayDirs(b Bundle) ([]string, error) {
 	es, err := os.ReadDir(b.Dir)
 	if err != nil {
-		return nil, fmt.Errorf("%s を読めません: %w", b.Dir, err)
+		return nil, fmt.Errorf(msg.M.Bundle.CannotRead, b.Dir, err)
 	}
 	var out []string
 	for _, e := range es {
@@ -131,7 +133,7 @@ type Composition struct {
 func Discover(root string) ([]Bundle, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, fmt.Errorf("バンドルルートを読めません: %w", err)
+		return nil, fmt.Errorf(msg.M.Bundle.CannotReadRoot, err)
 	}
 	var out []Bundle
 	for _, e := range entries {
@@ -172,7 +174,7 @@ func entries(b Bundle) ([]string, error) {
 		dir := filepath.Join(b.Dir, rel)
 		es, err := os.ReadDir(dir)
 		if err != nil {
-			return fmt.Errorf("%s を読めません: %w", dir, err)
+			return fmt.Errorf(msg.M.Bundle.CannotRead, dir, err)
 		}
 		for _, e := range es {
 			if !distributed(e.Name()) {
@@ -223,13 +225,13 @@ func Contents(b Bundle) ([]string, error) {
 func CheckLayout(b Bundle) error {
 	es, err := os.ReadDir(b.Dir)
 	if err != nil {
-		return fmt.Errorf("%s を読めません: %w", b.Dir, err)
+		return fmt.Errorf(msg.M.Bundle.CannotRead, b.Dir, err)
 	}
 	for _, e := range es {
 		if !distributed(e.Name()) || !isDir(filepath.Join(b.Dir, e.Name())) {
 			continue
 		}
-		return fmt.Errorf("バンドル %s: %s/ はバンドル直下に置けません（%s/%s/ のようにドット始まりの層へ移してください）",
+		return fmt.Errorf(msg.M.Bundle.LayoutViolation,
 			b.Name, e.Name(), DefaultOverlay, e.Name())
 	}
 	return nil
@@ -299,7 +301,7 @@ func LoadFragment(b Bundle, name string) (content []byte, ok bool, err error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("%s を読めません: %w", p, err)
+		return nil, false, fmt.Errorf(msg.M.Bundle.CannotRead, p, err)
 	}
 	return content, true, nil
 }
@@ -318,7 +320,7 @@ func LoadMeta(b Bundle) (Meta, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return m, nil
 		}
-		return Meta{}, fmt.Errorf("%s を読めません: %w", p, err)
+		return Meta{}, fmt.Errorf(msg.M.Bundle.CannotRead, p, err)
 	}
 	kvs, err := parseKeyValues(string(content))
 	if err != nil {
@@ -329,7 +331,7 @@ func LoadMeta(b Bundle) (Meta, error) {
 		case "description":
 			m.Description = kv.val // 重複は後勝ち
 		default:
-			return Meta{}, fmt.Errorf("%s: %d 行目: 未知のキー: %s（使えるのは description）", p, kv.line, kv.key)
+			return Meta{}, fmt.Errorf(msg.M.Bundle.UnknownMetaKey, p, kv.line, kv.key)
 		}
 	}
 	return m, nil
@@ -352,11 +354,11 @@ func parseKeyValues(s string) ([]keyValue, error) {
 		}
 		key, val, ok := strings.Cut(line, ":")
 		if !ok {
-			return nil, fmt.Errorf("%d 行目: : がありません: %s", n, line)
+			return nil, fmt.Errorf(msg.M.Bundle.NoColon, n, line)
 		}
 		key = strings.TrimSpace(key)
 		if key == "" {
-			return nil, fmt.Errorf("%d 行目: キー名が空です: %s", n, line)
+			return nil, fmt.Errorf(msg.M.Bundle.EmptyKey, n, line)
 		}
 		out = append(out, keyValue{key: key, val: strings.TrimSpace(val), line: n})
 	}

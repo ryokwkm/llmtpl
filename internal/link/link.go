@@ -28,6 +28,8 @@ import (
 
 	"github.com/ryokwkm/llmtpl/internal/bundle"
 	"github.com/ryokwkm/llmtpl/internal/fileout"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // foldedDirs は「フラグ 1 個 = ディレクトリ 1 本の symlink」に畳める器（**バンドル相対パス**）。
@@ -96,7 +98,7 @@ func Sync(outDir string, bundles []bundle.Bundle, o Options) ([]Action, error) {
 		actions = append(actions, Action{Path: linkPath, Kind: KindRemoved})
 		if !o.DryRun {
 			if err := os.Remove(linkPath); err != nil {
-				return nil, fmt.Errorf("%s を外せません: %w", linkPath, err)
+				return nil, fmt.Errorf(msg.M.Link.CannotUnlink, linkPath, err)
 			}
 		}
 	}
@@ -122,7 +124,7 @@ func Sync(outDir string, bundles []bundle.Bundle, o Options) ([]Action, error) {
 		case archived != "":
 			actions = append(actions, Action{Path: linkPath, Kind: KindArchived, Note: archived})
 		case planned:
-			actions = append(actions, Action{Path: linkPath, Kind: KindArchived, Note: "(dry-run) 退避が必要"})
+			actions = append(actions, Action{Path: linkPath, Kind: KindArchived, Note: msg.M.Link.WouldArchive})
 		}
 
 		if !o.DryRun {
@@ -130,7 +132,7 @@ func Sync(outDir string, bundles []bundle.Bundle, o Options) ([]Action, error) {
 				return nil, err
 			}
 			if err := os.Symlink(relTarget, linkPath); err != nil {
-				return nil, fmt.Errorf("%s を張れません: %w", linkPath, err)
+				return nil, fmt.Errorf(msg.M.Link.CannotLink, linkPath, err)
 			}
 		}
 		actions = append(actions, Action{Path: linkPath, Target: relTarget, Kind: KindCreated})
@@ -208,7 +210,7 @@ func (o Options) archive(path, bundleName string) (string, error) {
 		return "", err
 	}
 	if err := os.Rename(path, backup); err != nil {
-		return "", fmt.Errorf("%s を退避できません: %w", path, err)
+		return "", fmt.Errorf(msg.M.Link.CannotArchive, path, err)
 	}
 	return backup, nil
 }
@@ -236,7 +238,7 @@ func plan(bundles []bundle.Bundle) (map[string]wanted, []Action, error) {
 
 			children, err := os.ReadDir(srcDir)
 			if err != nil {
-				return nil, nil, fmt.Errorf("%s を読めません: %w", srcDir, err)
+				return nil, nil, fmt.Errorf(msg.M.Link.CannotRead, srcDir, err)
 			}
 			for _, ch := range children {
 				if strings.HasPrefix(ch.Name(), ".") {
@@ -247,7 +249,7 @@ func plan(bundles []bundle.Bundle) (map[string]wanted, []Action, error) {
 					actions = append(actions, Action{
 						Path: rel,
 						Kind: KindConflict,
-						Note: fmt.Sprintf("%s の %s は %s が先に提供しているためスキップ", b.Name, rel, prev.bundle),
+						Note: fmt.Sprintf(msg.M.Link.ConflictNote, b.Name, rel, prev.bundle),
 					})
 					continue
 				}
@@ -278,7 +280,7 @@ func ownedLinks(outDir, tplHome string, layers []string) (map[string]string, err
 
 	for _, layer := range layers {
 		if layer != "." && !filepath.IsLocal(layer) {
-			return nil, fmt.Errorf("走査層が outDir の外を指しています: %s", layer)
+			return nil, fmt.Errorf(msg.M.Link.LayerOutsideOutDir, layer)
 		}
 		layerDir := filepath.Join(outDir, layer)
 		dirs, err := os.ReadDir(layerDir)

@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 
 	"github.com/ryokwkm/llmtpl/internal/fileout"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // FileName は state ファイル名（ターゲットのルート直下に置く）。
@@ -44,16 +46,16 @@ func Load(claudeDir string) (State, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return State{Version: Version, Generated: map[string]string{}}, nil
 		}
-		return State{}, fmt.Errorf("%s を読めません: %w", p, err)
+		return State{}, fmt.Errorf(msg.M.State.CannotRead, p, err)
 	}
 	var s State
 	if err := json.Unmarshal(b, &s); err != nil {
 		// 黙って無視すると「外部の書き込み」を毎回誤検知して退避を繰り返すため、明示的に落とす
-		return State{}, fmt.Errorf("%s が壊れています（削除すれば次回 apply で作り直します）: %w", p, err)
+		return State{}, fmt.Errorf(msg.M.State.Corrupt, p, err)
 	}
 	if s.Version > Version {
 		// 新しい形式を古いバイナリが誤読すると「外部の書き込み」と誤判定して退避を撒く
-		return State{}, fmt.Errorf("%s は新しい形式です（version %d > %d）。llmtpl を更新してください", p, s.Version, Version)
+		return State{}, fmt.Errorf(msg.M.State.NewerFormat, p, s.Version, Version)
 	}
 	if s.Generated == nil {
 		s.Generated = map[string]string{}

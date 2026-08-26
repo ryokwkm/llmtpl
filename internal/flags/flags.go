@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // Set はフラグ名 → 真偽値。
@@ -74,16 +76,16 @@ func ParseConf(path string) (Conf, error) {
 		// セクションを弾くのは移行時の事故対策（階層のある conf を平坦なパーサへ流し込むと、
 		// セクション内の上書きが黙って失われる）
 		if strings.HasPrefix(text, "[") {
-			return Conf{}, fmt.Errorf("%s:%d: セクションは書けません（conf は平坦な `key = value` のみ。フラグの上書きはターゲットごとの conf に書く）: %s", path, line, text)
+			return Conf{}, fmt.Errorf(msg.M.Flags.Section, path, line, text)
 		}
 		key, val, ok := strings.Cut(text, "=")
 		if !ok {
-			return Conf{}, fmt.Errorf("%s:%d: = がありません: %s", path, line, text)
+			return Conf{}, fmt.Errorf(msg.M.Flags.NoEquals, path, line, text)
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		if key == "" {
-			return Conf{}, fmt.Errorf("%s:%d: キー名が空です: %s", path, line, text)
+			return Conf{}, fmt.Errorf(msg.M.Flags.EmptyKey, path, line, text)
 		}
 		// **分岐はキー名で行う**。「値が true/false でないなら予約キー」と書くと
 		// `commit = mayb` のようなタイポが全部パスとして受理され、下の検証が丸ごと死ぬ
@@ -101,11 +103,11 @@ func ParseConf(path string) (Conf, error) {
 		case "false":
 			out.Flags[key] = false
 		default:
-			return Conf{}, fmt.Errorf("%s:%d: 値は true / false のみ: %s = %s", path, line, key, val)
+			return Conf{}, fmt.Errorf(msg.M.Flags.BoolOnly, path, line, key, val)
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return Conf{}, fmt.Errorf("%s: 読み込みに失敗: %w", path, err)
+		return Conf{}, fmt.Errorf(msg.M.Flags.ReadFailed, path, err)
 	}
 	return out, nil
 }
@@ -117,19 +119,19 @@ func ParseConf(path string) (Conf, error) {
 func resolveConfPath(val, path string, line int, key string) (string, error) {
 	switch val {
 	case "":
-		return "", fmt.Errorf("%s:%d: %s の値が空です（バンドルルートのパスを書きます）", path, line, key)
+		return "", fmt.Errorf(msg.M.Flags.EmptyValue, path, line, key)
 	case "true", "false":
-		return "", fmt.Errorf("%s:%d: %s はパスを書くキーです（true / false ではありません）: %s = %s", path, line, key, key, val)
+		return "", fmt.Errorf(msg.M.Flags.PathKeyNotBool, path, line, key, key, val)
 	}
 	// $VAR は展開しない（未定義変数が黙って空になり、壊れた相対パスを作る）
 	if val == "~" || strings.HasPrefix(val, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("%s:%d: %s の ~ を展開できません: %w", path, line, key, err)
+			return "", fmt.Errorf(msg.M.Flags.TildeExpandFailed, path, line, key, err)
 		}
 		val = filepath.Join(home, strings.TrimPrefix(val, "~"))
 	} else if strings.HasPrefix(val, "~") {
-		return "", fmt.Errorf("%s:%d: %s の ~ユーザー名 形式は使えません（絶対パスか、この conf からの相対パスで書きます）: %s", path, line, key, val)
+		return "", fmt.Errorf(msg.M.Flags.TildeUserForm, path, line, key, val)
 	}
 	if !filepath.IsAbs(val) {
 		val = filepath.Join(filepath.Dir(path), val)
@@ -164,10 +166,10 @@ func Validate(s Set, known map[string]bool, srcLabel string) error {
 	if len(unknown) == 0 {
 		return nil
 	}
-	avail := "（バンドルがありません）"
+	avail := msg.M.Flags.NoBundles
 	if len(known) > 0 {
 		avail = strings.Join(slices.Sorted(maps.Keys(known)), ", ")
 	}
-	return fmt.Errorf("%s: 未知のフラグ: %s（同名のバンドルディレクトリがありません）。利用可能: %s",
+	return fmt.Errorf(msg.M.Flags.UnknownFlag,
 		srcLabel, strings.Join(unknown, ", "), avail)
 }

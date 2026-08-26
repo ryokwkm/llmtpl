@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 func writeConf(t *testing.T, content string) string {
@@ -78,27 +80,27 @@ func TestParseConf_エッジケース(t *testing.T) {
 		{
 			name:    "不正値はエラー",
 			content: "commit = maybe\n",
-			wantErr: "値は true / false のみ",
+			wantErr: msg.Lit(msg.M.Flags.BoolOnly),
 		},
 		{
 			name:    "大文字 True はエラー",
 			content: "commit = True\n",
-			wantErr: "値は true / false のみ",
+			wantErr: msg.Lit(msg.M.Flags.BoolOnly),
 		},
 		{
 			name:    "インラインコメントはエラー（値の一部と見なされる）",
 			content: "commit = false # note\n",
-			wantErr: "値は true / false のみ",
+			wantErr: msg.Lit(msg.M.Flags.BoolOnly),
 		},
 		{
 			name:    "等号なし行はエラー",
 			content: "commit\n",
-			wantErr: "= がありません",
+			wantErr: msg.Lit(msg.M.Flags.NoEquals),
 		},
 		{
 			name:    "キー名が空はエラー",
 			content: "= true\n",
-			wantErr: "キー名が空",
+			wantErr: msg.Lit(msg.M.Flags.EmptyKey),
 		},
 		{
 			name:    "BOM 付き先頭行のキーは commit として読まれない",
@@ -114,7 +116,7 @@ func TestParseConf_エッジケース(t *testing.T) {
 			// セクション付きの conf をそのまま持ち込む事故を黙って通さない（セクション内の上書きが失われる）
 			name:    "セクション行はエラー（llmtpl の conf は平坦）",
 			content: "[global]\nwiki = true\n",
-			wantErr: "セクション",
+			wantErr: msg.Lit(msg.M.Flags.Section),
 		},
 	}
 	for _, c := range cases {
@@ -184,10 +186,10 @@ func TestParseConf_予約キーのパス解決(t *testing.T) {
 		{name: "カレント相対も conf 基準", val: "./llm-tpl", want: "%s/llm-tpl"},
 		{name: "~ は展開する", val: "~/cfg/llm-tpl", want: filepath.Join(home, "cfg/llm-tpl")},
 		{name: "~ 単独も展開する", val: "~", want: home},
-		{name: "~ユーザー名 はエラー", val: "~someone/x", wantErr: "~ユーザー名"},
-		{name: "空値はエラー", val: "", wantErr: "値が空"},
-		{name: "true はエラー", val: "true", wantErr: "パスを書くキー"},
-		{name: "false はエラー", val: "false", wantErr: "パスを書くキー"},
+		{name: "~ユーザー名 はエラー", val: "~someone/x", wantErr: msg.Lit(msg.M.Flags.TildeUserForm)},
+		{name: "空値はエラー", val: "", wantErr: msg.Lit(msg.M.Flags.EmptyValue)},
+		{name: "true はエラー", val: "true", wantErr: msg.Lit(msg.M.Flags.PathKeyNotBool)},
+		{name: "false はエラー", val: "false", wantErr: msg.Lit(msg.M.Flags.PathKeyNotBool)},
 		{name: "$VAR は展開しない（そのまま相対パス扱い）", val: "$HOME/x", want: "%s/$HOME/x"},
 	}
 	for _, c := range cases {
@@ -230,7 +232,7 @@ func TestParseConf_予約キー導入後もタイポは弾かれる(t *testing.T
 	if err == nil {
 		t.Fatal("フラグのタイポがエラーにならない（予約キーの分岐がキー名でなく値を見ている疑い）")
 	}
-	if !strings.Contains(err.Error(), "値は true / false のみ") {
+	if !strings.Contains(err.Error(), msg.Lit(msg.M.Flags.BoolOnly)) {
 		t.Errorf("エラーメッセージが期待と異なる: %v", err)
 	}
 }

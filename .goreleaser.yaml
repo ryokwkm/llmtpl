@@ -57,8 +57,11 @@ homebrew_casks:
     description: "Turn AI agent config features on and off, one line at a time."
     license: "Apache-2.0"
     # cobra の completion サブコマンドを install 時に実行して補完を配置する。
+    # ⚠️ executable は tar.gz 内の相対パス。この archive はルート直下に llmtpl を置くので
+    # "bin/llmtpl" ではない（v0.1.0 は bin/ 付きで出してしまい、補完生成が警告付きで
+    # スキップされる。install 自体は成功する）。
     generate_completions_from_executable:
-      executable: "bin/llmtpl"
+      executable: "llmtpl"
       shell_parameter_format: cobra
     hooks:
       post:

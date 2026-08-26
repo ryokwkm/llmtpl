@@ -139,6 +139,20 @@ func isInteractive() bool {
 	return xterm.IsTerminal(os.Stdin.Fd()) && xterm.IsTerminal(os.Stdout.Fd())
 }
 
+// optionChrome は huh が 1 行の先頭へ付ける飾りの幅（カーソル "> " + 選択印 "✓ "）と、
+// フォームの枠・余白の見積もり。**多めに取る** —— 1 桁でも溢れると折り返して
+// viewport の高さ計算が崩れる（optionLabel の注記を参照）。
+const optionChrome = 8
+
+// labelWidth は 1 行に使ってよい表示幅。端末幅が取れなければ 80 桁とみなす。
+func labelWidth() int {
+	w, _, err := xterm.GetSize(os.Stdout.Fd())
+	if err != nil || w <= 0 {
+		w = 80
+	}
+	return w - optionChrome
+}
+
 // huhPrompter は実際の端末で使う尋ね方（huh のフォーム）。
 func huhPrompter() prompter {
 	return prompter{
@@ -232,9 +246,10 @@ func bundleItems(root apply.Root, tg apply.Target) ([]item, error) {
 
 // askFlags はチェックボックスを出し、選ばれたフラグ名を返す。
 func askFlags(items []item) ([]string, error) {
+	w := labelWidth()
 	opts := make([]huh.Option[string], 0, len(items))
 	for _, it := range items {
-		opts = append(opts, huh.NewOption(optionLabel(it), it.Name).Selected(it.Effective))
+		opts = append(opts, huh.NewOption(optionLabel(it, w), it.Name).Selected(it.Effective))
 	}
 
 	// Height は指定しない。未設定なら huh が選択肢の数に合わせて全部を 1 画面へ収める
@@ -266,18 +281,57 @@ func desiredOf(items []item, picked []string) flags.Set {
 
 // optionLabel は 1 行の表示。説明は bundle.conf 由来のデータなので、UI の言語には従わない。
 //
-// **既定 ON の注記は defaults.conf で ON のものだけ**に付ける。これを外すと
-// `name = false` の明示追記が起きる ＝ 確認画面で「なぜか行が増える」ので、
-// 選ぶ前に理由が見えている必要がある。
-func optionLabel(it item) string {
-	s := it.Name
-	if it.Desc != "" {
-		s += " — " + it.Desc
-	}
+// 🔴 **width に収めて折り返させないこと**。huh は 1 オプションを 1 行として viewport の高さを
+// 決めるので、端末で折り返すと実際の表示行数が計算を超え、**先頭のバンドルが画面の外へ押し出される**
+// （2026-08-26 に実機で agenttrail が消えて発覚した）。
+//
+// 削る順序は「説明 → 何も削らない」。**フラグ名と既定 ON の注記は削らない** ——
+// 名前が切れると何を選んでいるか分からず、注記が消えると
+// 「外すと `name = false` の明示追記が起きる」理由が選ぶ前に見えなくなる。
+func optionLabel(it item, width int) string {
+	head := it.Name
+	tail := ""
 	if it.DefaultOn {
-		s += " " + msg.M.Interactive.DefaultOnNote
+		tail = " " + msg.M.Interactive.DefaultOnNote
 	}
-	return s
+	if it.Desc == "" {
+		return head + tail
+	}
+
+	const sep = " — "
+	room := width - displayWidth(head) - displayWidth(sep) - displayWidth(tail)
+	desc := truncateWidth(it.Desc, room)
+	if desc == "" {
+		return head + tail // 説明を置く余地が無い（名前と注記は残す）
+	}
+	return head + sep + desc + tail
+}
+
+// truncateWidth は表示幅が max を超えないよう末尾を … で詰める（全角を 2 と数える）。
+func truncateWidth(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if displayWidth(s) <= max {
+		return s
+	}
+	const ellipsis = "…"
+	budget := max - displayWidth(ellipsis)
+	if budget <= 0 {
+		return ""
+	}
+	w := 0
+	for i, r := range s {
+		rw := 1
+		if isWideRune(r) {
+			rw = 2
+		}
+		if w+rw > budget {
+			return s[:i] + ellipsis
+		}
+		w += rw
+	}
+	return s + ellipsis
 }
 
 // writtenFlags は「llmtpl.conf に行として書かれているフラグ」だけを返す（Plan の入力）。

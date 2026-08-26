@@ -68,7 +68,7 @@ func TestOptionLabel(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := optionLabel(tc.it); got != tc.want {
+			if got := optionLabel(tc.it, 80); got != tc.want {
 				t.Errorf("\n got: %q\nwant: %q", got, tc.want)
 			}
 		})
@@ -417,5 +417,73 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+// --- 1 行に収める ------------------------------------------------------------
+// 説明が長いと端末で折り返す。huh は 1 オプションを 1 行として数えるので viewport の高さが
+// 足りなくなり、**先頭のバンドルが画面から消える**（2026-08-26 に実機で agenttrail が消えて発覚）。
+// 折り返さないことが表示の前提になる。
+
+func TestOptionLabel_幅に収める(t *testing.T) {
+	long := item{Name: "reporter", Desc: "claude-task-reporter（応答完了時の LLM 要約 →デスクトップ通知 + 音声読み上げ）の hook 登録（実体は外部リポジトリ）"}
+
+	for _, w := range []int{20, 40, 72, 100} {
+		got := optionLabel(long, w)
+		if displayWidth(got) > w {
+			t.Errorf("幅 %d に収まっていない（%d）: %q", w, displayWidth(got), got)
+		}
+		if !strings.HasPrefix(got, "reporter") {
+			t.Errorf("フラグ名が消えている: %q", got)
+		}
+		if strings.Contains(got, "\n") {
+			t.Errorf("改行が入っている: %q", got)
+		}
+	}
+}
+
+// フラグ名は削らない。切れると何を選んでいるのか分からなくなる（幅を超えても残す）
+func TestOptionLabel_幅が足りなくても名前は残す(t *testing.T) {
+	it := item{Name: "progress-digest", Desc: "横断のタスク把握 skill"}
+	if got := optionLabel(it, 5); !strings.HasPrefix(got, "progress-digest") {
+		t.Errorf("名前が削られている: %q", got)
+	}
+}
+
+// 既定 ON の注記は説明より優先して残す（外すと `= false` の明示追記が起きるため）
+func TestOptionLabel_既定ONの注記は説明より優先(t *testing.T) {
+	it := item{Name: "commit", Desc: strings.Repeat("長い説明", 30), DefaultOn: true}
+	got := optionLabel(it, 60)
+	if displayWidth(got) > 60 {
+		t.Errorf("幅に収まっていない（%d）: %q", displayWidth(got), got)
+	}
+	if !strings.HasSuffix(got, msg.M.Interactive.DefaultOnNote) {
+		t.Errorf("既定 ON の注記が落ちている: %q", got)
+	}
+}
+
+func TestTruncateWidth(t *testing.T) {
+	cases := []struct {
+		s    string
+		max  int
+		want string
+	}{
+		{"abcdef", 10, "abcdef"},
+		{"abcdef", 6, "abcdef"},
+		{"abcdef", 5, "abcd…"},
+		{"あいうえお", 10, "あいうえお"},
+		{"あいうえお", 7, "あいう…"}, // 全角 3 つ（6）+ … （1）= 7
+		{"あいうえお", 0, ""},
+		{"a", 1, "a"},
+	}
+	for _, c := range cases {
+		got := truncateWidth(c.s, c.max)
+		if got != c.want {
+			t.Errorf("truncateWidth(%q, %d) = %q, want %q", c.s, c.max, got, c.want)
+		}
+		if displayWidth(got) > c.max {
+			t.Errorf("truncateWidth(%q, %d) = %q が幅 %d を超えている（%d）",
+				c.s, c.max, got, c.max, displayWidth(got))
+		}
 	}
 }

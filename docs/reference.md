@@ -140,6 +140,11 @@ that never comes would hang a script.
 **Aborting (Esc or Ctrl-C) exits 130** and changes nothing. There is no `q` shortcut: the list is
 filterable by typing, so a letter key cannot also mean quit.
 
+**Each row is truncated to one line.** Descriptions from `bundle.conf` are often long; a row that
+wrapped would take more screen lines than the list reckons with, pushing the first bundle off the
+top. Only the description is shortened — the flag name and the default-on note always stay. Widen
+the terminal to read more of it, or run `llmtpl bundles` for the full text.
+
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and
 would regenerate sibling targets you did not just edit; the interactive mode edits one conf, so it
 applies one target and tells you how many others exist.

@@ -1,0 +1,96 @@
+# GoReleaser の設定。タグ（v*）を push すると .github/workflows/release.yml から呼ばれ、
+# クロスビルド → GitHub Release へバイナリ添付 → Homebrew tap の Cask 更新まで走る。
+#
+# ローカルで確かめるなら `goreleaser release --snapshot --clean`（公開せずに dist/ を作る）。
+version: 2
+
+project_name: llmtpl
+
+before:
+  hooks:
+    - go mod tidy
+    # CI には LANG が無いので msg カタログは英語側になる。テストは両方で通る作りにしてある。
+    - go test ./...
+
+builds:
+  - id: llmtpl
+    main: .
+    binary: llmtpl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      # main.version は -X で埋める前提の変数（main.go）。埋めないと "dev" のまま。
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: llmtpl
+    ids:
+      - llmtpl
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - README.ja.md
+      - LICENSE
+      - docs/*
+
+homebrew_casks:
+  - name: llmtpl
+    ids:
+      - llmtpl
+    binaries:
+      - llmtpl
+    repository:
+      owner: ryokwkm
+      name: homebrew-tap
+      # Actions 既定の GITHUB_TOKEN は llmtpl リポジトリにしか書けないので、
+      # tap へ push するには別リポジトリ宛の PAT が要る（secret: HOMEBREW_TAP_TOKEN）。
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/ryokwkm/llmtpl"
+    description: "Turn AI agent config features on and off, one line at a time."
+    license: "Apache-2.0"
+    # cobra の completion サブコマンドを install 時に実行して補完を配置する。
+    generate_completions_from_executable:
+      executable: "bin/llmtpl"
+      shell_parameter_format: cobra
+    hooks:
+      post:
+        # 🔴 未署名バイナリは quarantine ビットが付き、macOS が
+        # 「"llmtpl" is damaged and cannot be opened」で起動を拒否する。
+        # 正攻法は Apple の署名 + notarize だが年額の有料プログラムが要るので、
+        # install 時に quarantine を外す（GoReleaser の公式ドキュメントが案内している回避策）。
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/llmtpl"]
+          end
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^refactor:"
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```sh
+    brew install ryokwkm/tap/llmtpl
+    ```
+
+    Or download a binary above, or `go install github.com/ryokwkm/llmtpl@{{ .Tag }}`.

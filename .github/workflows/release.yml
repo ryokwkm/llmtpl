@@ -1,0 +1,34 @@
+name: release
+
+# v で始まるタグを push したときだけ走る。通常のコミットでは何も起きない。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # changelog を作るのに全履歴が要る（浅い clone だと前タグからの差分が出せない）
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Release の作成に使う（このリポジトリへの書き込み）
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ryokwkm/homebrew-tap へ Cask を push するための PAT。
+          # 上の GITHUB_TOKEN は別リポジトリへ書けないので分けている。
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

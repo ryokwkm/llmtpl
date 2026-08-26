@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - run: go vet ./...
+
+      # CI には LANG が無いので、ここは msg カタログの英語側で走る。
+      - run: go test ./...
+
+      # 日本語側も通ることを固定する。メッセージを英語だけで直すと日本語が腐るため。
+      - run: go test ./...
+        env:
+          LLMTPL_LANG: ja
+
+      - run: gofmt -l . | tee /tmp/fmt.out && test ! -s /tmp/fmt.out
+
+  goreleaser-check:
+    # タグを切ってから設定ミスに気づくと、失敗した Release が残って後始末が要る。
+    # 設定の妥当性は毎 push で見ておく（ビルドも公開もしない、構文と項目の検査だけ）。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check

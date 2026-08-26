@@ -1,0 +1,1 @@
+- Every line starts with a timestamp.

@@ -38,7 +38,16 @@ import (
 // silent は defaults.conf で常時 ON。断片を持たないバンドルが生成物に何も足さないことを、
 // 全ケースが同時に固定している。
 func TestGolden_合成fixtureの生成物が固定と一致する(t *testing.T) {
-	src, err := filepath.Abs(filepath.Join("..", "..", "testdata", "golden"))
+	// golden は README.ja.md の、golden-en は README.md のデモと対になる。
+	// root を分けているのは、どちらのデモでもバンドル名を logcheck のまま書けるようにするため。
+	for _, root := range []string{"golden", "golden-en"} {
+		t.Run(root, func(t *testing.T) { runGoldenCases(t, root) })
+	}
+}
+
+func runGoldenCases(t *testing.T, root string) {
+	t.Helper()
+	src, err := filepath.Abs(filepath.Join("..", "..", "testdata", root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,23 +114,30 @@ func TestGolden_合成fixtureの生成物が固定と一致する(t *testing.T) 
 // 初見が最初に実行する手順でもある）。README を実際に読んで比較するので、README 側だけ直しても
 // fixture 側だけ直しても落ちる。
 func TestGolden_READMEのQuickStart出力がfixtureと一致する(t *testing.T) {
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	block, ok := fencedBlockWithMarker(string(readme), GeneratedMarker)
-	if !ok {
-		t.Fatal("README.md に GENERATED ヘッダで始まるコードブロックがありません（Quick Start の出力例が消えた？）")
-	}
-	// 1 行目のヘッダは原本パスを含み、README とテストの作業ディレクトリで必ず違うので比較しない
-	_, got, _ := strings.Cut(block, "\n")
+	for _, c := range []struct{ readme, fixture string }{
+		{"README.md", "golden-en"},
+		{"README.ja.md", "golden"},
+	} {
+		t.Run(c.readme, func(t *testing.T) {
+			readme, err := os.ReadFile(filepath.Join("..", "..", c.readme))
+			if err != nil {
+				t.Fatal(err)
+			}
+			block, ok := fencedBlockWithMarker(string(readme), GeneratedMarker)
+			if !ok {
+				t.Fatalf("%s に GENERATED ヘッダで始まるコードブロックがありません（Quick Start の出力例が消えた？）", c.readme)
+			}
+			// 1 行目のヘッダは原本パスを含み、README とテストの作業ディレクトリで必ず違うので比較しない
+			_, got, _ := strings.Cut(block, "\n")
 
-	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", "cases", "quickstart", "expected.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != string(want) {
-		t.Errorf("README の Quick Start の出力例が fixture とズレています（片方だけ直した？）。\n--- README ---\n%s\n--- expected.md ---\n%s", got, want)
+			want, err := os.ReadFile(filepath.Join("..", "..", "testdata", c.fixture, "cases", "quickstart", "expected.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != string(want) {
+				t.Errorf("%s の Quick Start の出力例が fixture とズレています（片方だけ直した？）。\n--- README ---\n%s\n--- expected.md ---\n%s", c.readme, got, want)
+			}
+		})
 	}
 }
 

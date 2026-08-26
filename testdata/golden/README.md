@@ -29,11 +29,16 @@ cases/<name>/expected.md     期待する生成物（1 行目の GENERATED ヘ�
 
 ## quickstart ケースだけは README と紐づく
 
-`cases/quickstart/` は `README.md` の「動かして見る」と同じ入力・同じ出力にしてある。
+`cases/quickstart/` は `README.ja.md` の「動かして見る」と同じ入力・同じ出力にしてある。
 **README の出力例が実装とズレたらこのケースが落ちる**のが狙いで、それがこのケースの主目的。
 
 README 側を変えたら、このケースの `CLAUDE.md.tmpl` と `expected.md` も揃える
 （逆も同じ）。片方だけ変えるとテストが落ちるので、ズレたまま気づかないことは無い。
+
+英語版 README（`README.md`）は隣の **`testdata/golden-en/`** と対になっている。root ごと
+分けてあるのは、どちらのデモでもバンドル名を `logcheck` のまま書けるようにするため
+（同じ root に置くと片方を `logcheck-en` 等に改名する必要が出て、README の説明が濁る）。
+golden-en は quickstart 1 ケースだけで、担う軸は golden 側の quickstart と同じ。
 
 ## 期待値の更新
 

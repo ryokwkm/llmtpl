@@ -1,0 +1,8 @@
+# Instructions for proj
+
+- Write it in Go.
+
+## Work log checks
+
+- Verify the format of `log/` when you finish a task. The rules are in `.claude/rules/logcheck/format.md`.
+- To check by hand, run `.claude/hooks/verify.sh`.

@@ -1,191 +1,173 @@
-# 詳細リファレンス
+# Reference
 
-[README](../README.ja.md) が「使い始めるまで」を扱うのに対し、ここは仕様の細部と、
-その仕様になっている理由を扱う。
+**English** | [日本語](reference.ja.md)
 
-## バンドルレイアウトの細則
+The [README](../README.md) covers getting started. This covers the details of the spec, and why the
+spec is the way it is.
 
-オーバーレイの走査は「バンドル直下」と「ドット始まりディレクトリの直下」の 2 段だけ。
+## Bundle layout
 
-**ディレクトリをバンドル直下に置くのはエラー**（`<flag>/docs/` 等）。symlink の掃除は「層 → 器 → エントリ」を
-走査するので、層がドット始まりに限られていれば範囲は `<ターゲット>/.<何か>/` に閉じる。ここにルート直下を
-許すと、プロジェクトのトップレベル全体が削除対象の探索範囲になる。ルート直下に置けるのはファイル断片だけ。
+Overlay scanning goes exactly two levels deep: the bundle root, and directly inside any
+dot-prefixed directory.
 
-## ターゲット検出の細則
+**A directory placed directly in a bundle is an error** (`<flag>/docs/`, say). Symlink cleanup walks
+layer → container → entry, so as long as layers are limited to dot-prefixed names, its reach stays
+inside `<target>/.<something>/`. Allow one at the bundle root and the search range for deletion
+becomes the project's entire top level. Only file fragments may sit at the bundle root.
 
-ターゲットの目印は `llmtpl.conf` を持つこと、それだけ。ベースの `*.tmpl` はターゲットの**中身**であって
-目印ではない。両方を目印にすると `<P>` と `<P>/.claude` が同時にターゲットになり（前者は
-`.claude/*.tmpl` を、後者は自分の `*.tmpl` を数える）、`llmtpl.conf` を持たない後者が全フラグ OFF で
-生成物を薄い内容に上書きする。目印を 1 つに絞れば起きない。
+## Target detection
 
-## slot（受け口）— 差し込む位置を選びたいときだけ
+The only mark of a target is having an `llmtpl.conf`. The base `*.tmpl` files are a target's
+**contents**, not its mark. Treat both as marks and `<P>` and `<P>/.claude` become targets at the
+same time (the first counting `.claude/*.tmpl`, the second counting its own `*.tmpl`), and the
+second — which has no `llmtpl.conf` — overwrites the generated file with thin content, every flag
+off. Keeping the mark to one thing means this cannot happen.
 
-断片を差し込む位置を選びたくなったときだけ、ベースの `*.tmpl` に `{{- slot "<フラグ名>"}}` を書く。
-**slot 名 = フラグ名 = バンドルのディレクトリ名**で、断片側に宣言は要らない。
-存在しないフラグ名を受け口に書くとエラーになる（タイポ検出）。
+## Slots — only when you want to choose where a fragment lands
 
-受け口を書かなければ**生成物の末尾へ追記**される（複数あればバンドル名の昇順）。
-末尾追記と受け口経由はバイト列が一致するので、後から位置を選び直しても差分は出ない。
+When you want to choose where a fragment goes, write `{{- slot "<flag name>"}}` in the base `*.tmpl`.
+**Slot name = flag name = bundle directory name**, and the fragment side declares nothing. A slot
+naming a flag that does not exist is an error (that is how typos are caught).
 
-## 探索とバンドルルートの解決
+Write no slot and the fragment is **appended to the end** of the generated file (in ascending bundle
+order if there are several). Appending and going through a slot produce identical bytes, so choosing
+a position later produces no diff.
 
-**探索は「指定ディレクトリ自身 + その配下」**。設定リポジトリの中にプロジェクトを並べる構成なら
-複数あってよく、2 件以上なら件数を表示する。暴走は 3 段で止める —
-`llm-tpl/` `partials/` `.archive/` `node_modules` `vendor` は見ない /
-**ドット始まりはターゲットにせず中へも降りない** / **別リポジトリ（`.git` を持つディレクトリ）へは降りない**。
+## Search and bundle root resolution
 
-バンドルルートの解決順は `--tpl-home` → `$LLMTPL_HOME` → **`llmtpl.conf` の `bundle_root`** →
-親を辿って `llm-tpl/` → `${XDG_CONFIG_HOME:-~/.config}/llmtpl`。設定リポジトリの中で
-`llm-tpl/` を隣に置いて使う限り、4 番目だけで解決するので何も書かなくてよい。
+**The search covers the given directory and everything under it.** There may be several targets if
+you keep projects inside a config repository; two or more prints a count. Three guards stop it from
+running away: `llm-tpl/`, `partials/`, `.archive/`, `node_modules`, and `vendor` are never looked at;
+**dot-prefixed directories are neither targets nor descended into**; and **a separate repository (any
+directory with a `.git`) is never descended into**.
 
-### bundle_root の細則
+The bundle root resolves in this order: `--tpl-home` → `$LLMTPL_HOME` → **`bundle_root` in
+`llmtpl.conf`** → walking up for `llm-tpl/` → `${XDG_CONFIG_HOME:-~/.config}/llmtpl`. As long as you
+keep `llm-tpl/` next to your projects inside a config repository, only the fourth applies and you
+write nothing.
 
-`bundle_root` はバンドル置き場が親方向に無いとき（別リポジトリのバンドルを借りるとき）に書く。
+### bundle_root
+
+Write `bundle_root` when there is no bundle directory anywhere above you — that is, when you borrow
+bundles from another repository.
 
 ```ini
-# <ターゲット>/llmtpl.conf
-bundle_root = ../../shared-bundles     # この conf のあるディレクトリからの相対。~ も可
+# <target>/llmtpl.conf
+bundle_root = ../../shared-bundles     # relative to the directory holding this conf; ~ works too
 wiki = true
 ```
 
-- 値はパス。**フラグと違って `true` / `false` は書けない**（キー名で分岐するので、フラグ側の
-  タイポ検出は従来どおり効く）
-- 相対パスは**その conf のあるディレクトリ**が基準（実行場所で結果が変わらないようにするため）。
-  `~` は展開するが `$VAR` は展開しない。symlink は解決しない
-- 指した先が無ければ、親探索へ落ちずに**エラーで止まる**（落とすとタイポが「別の置き場で生成に成功する」に化ける）
-- **`defaults.conf` には書けない**。そのファイル自体が置き場の中にあるので、読む時点でルートは解決済み
-- 複数のターゲットが**別々の値**を書いていたらエラー。同じ値なら何件あってもよい
-- バンドルルートのディレクトリを `bundle_root` という名前にはできない（conf でそのフラグを
-  ON にできなくなるため、`apply` が拒否する）
+- The value is a path. **Unlike a flag it cannot be `true` / `false`** (the branch is on the key
+  name, so typo detection on the flag side keeps working as before)
+- A relative path is resolved against **the directory holding that conf**, so the result does not
+  change with where you run from. `~` is expanded; `$VAR` is not. Symlinks are not resolved
+- If the path does not exist, it **stops with an error** rather than falling through to the walk-up
+  (falling through would turn a typo into "generation succeeded against a different bundle root")
+- **It cannot be written in `defaults.conf`.** That file lives inside the bundle root, so the root is
+  already resolved by the time it is read
+- Two targets naming **different** values is an error. Any number naming the same value is fine
+- A bundle root directory cannot itself be named `bundle_root` (you could no longer turn on a flag by
+  that name in a conf, so `apply` refuses)
 
-⚠️ **書いた conf は古い llmtpl では読めない**（`bundle_root` が未知の値としてパースエラーになる）。
-複数マシン・複数リポジトリで共有している場合は、書く前に全環境で更新しておくこと。
+⚠️ **A conf using this key cannot be read by an older llmtpl** (`bundle_root` fails to parse as an
+unknown value). If you share confs across machines or repositories, update everywhere before writing it.
 
-### status の見方
+### Reading `status`
 
-`status` は「行 = ターゲット、列 = フラグ」のマトリクスで実効値を出す。
-README の demo に `review` バンドルと `tools/.claude` を足して実行した実測値:
-
-```
-$ llmtpl status
-対象 2 件
-バンドルルート: /path/to/demo/llm-tpl（親探索）
-ターゲット  hello  review
-proj        ON     -
-tools       ON     ON
-```
-
-## 合成の詳細
-
-**Markdown（`*.md.tmpl`）** — ON バンドルの**同じ相対位置にある断片**を集め、受け口 or 末尾へ差し込む。
-生成物の 1 行目には `<!-- GENERATED ... -->` が入る（HTML コメントなので Claude Code の
-コンテキストには載らない）。
-
-**JSON（`*.json.tmpl`）** — ON バンドルの断片を deep merge し、最後にターゲット側を重ねる
-（具体的な方が勝つ）。適用順はバンドル名順。オブジェクトは再帰マージ、配列は union、
-スカラーは後勝ち。
-
-**ディレクトリ** — `.claude/rules` は**ディレクトリ 1 本に畳んで** `.claude/rules/<flag>` へ、それ以外
-（`skills` / `agents` / `commands` / `hooks`）は**エントリ単位**で symlink する。
-`.claude/rules/` は `.md` を再帰探索されるので畳めるが、skills は `<name>/SKILL.md` が
-発見規約なので階層を挟めない、という Claude Code 側の都合による非対称。
-畳めるほうには副次効果があり、`rules/<flag>/` の中は自由に名付けられる。
-
-リンクの所有権は「**リンク先がバンドルルート配下を指しているか**」で判定する。
-だからターゲット固有の実体（手書きの `rules/foo.md` 等）は OFF にしても残る。
-
-## テンプレ文法
-
-**`.tmpl` の中身はすべて Go テンプレートとして評価される。** `{{ }}` を含む行（GitHub Actions の
-`${{ }}` の説明など）があるとパースエラーで止まる。黙って中身が消えることはなく、`--dry-run` の
-時点で分かる。そのまま残したい `{{` は `{{"{{"}}` と書く。
-
-| 記法 | 意味 |
-|---|---|
-| `{{if .wiki}} … {{else}} … {{end}}` | フラグ条件（ネスト = AND） |
-| `{{- slot "wiki"}}` | 受け口。専用行に置く（`{{-` が直前の改行を食う） |
-| `{{template "part.tmpl" .}}` | `partials/*.tmpl` の部品を呼ぶ（`.` を忘れない） |
-| `{{/* コメント */}}` | 生成物に出ない。`<!-- -->` は**そのまま出る**ので使わない |
-
-フラグは**全バンドル名が母集合**として渡るので、conf に書いていないバンドルも `{{if}}` で参照できる
-（値は false）。存在しない名前を参照した場合だけエラーになる。
-
-**断片の先頭の改行は書き手が決める。** `## 見出し` で始める断片は先頭に空行 1 行を置く
-（置かないと直前の箇条書きに見出しが密着する）。前のリストの続きとして繋げたい断片は置かない。
-エンジンは末尾の改行だけを均し、先頭は触らない。
-
-## 使う上での細則
-
-### 退避の仕組み
-
-**既存ファイルは退避してから上書きする。** 生成マーカを持たない実体を見つけると
-`.archive/<ラベル>.bk.<timestamp>` へコピーしてから書く。退避先は**ターゲット直下**で、
-ラベルはターゲットからの相対パス（`.claude-CLAUDE.md` など）。
-JSON はコメントを書けないので、`.llmtpl-state.json`（生成物のハッシュ）で「自分の生成物か」を判定する。
-このファイルを消すと、既存の `settings.json` が未知の実体として退避される。
-
-**生成物への手編集は退避されずに消える**（マーカがあるので「自分が前回書いたもの」と判定される）。
-編集は必ず原本の `*.tmpl` 側へ。
-
-### `~/.claude` を生成物にするときの代償
-
-**`~/.claude/settings.json` をターゲットの生成物にすると代償がある。** Claude Code 自身の書き込み
-（`/model`・`/config`・`/plugin`・`/permissions`）が次回 apply で退避されて消える。
-恒久的に変えたい値は `settings.json.tmpl` 側へ書くこと。同じ理由で `~/.claude/CLAUDE.md` を
-生成物にすると `#` のクイックメモリが次回 apply で消える。**settings.json の生成は opt-in**
-（`*.json.tmpl` を置いたターゲットだけが対象）なので、必要になるまで手を出さないのが安全。
-
-### 保証しないこと
-
-1. バンドル側の断片は、ターゲットの同じ相対位置に `*.tmpl` が無ければ差し込まれない
-   （`apply` / `check` が 1 行で知らせるが、エラーにはしない）
-2. llmtpl が張ったものでない symlink は、リンク先がバンドルルート配下を指していれば削除される
-3. リンク作成が失敗しても生成物はロールバックしない
-4. **同じバンドルを複数のターゲットで ON にしたときの二重配布は検出しない**（同じ skill が
-   user スコープと project スコープの両方へ入りうる）
-5. **バンドルルートがターゲットと同じリポジトリにあるとき、`GENERATED` ヘッダの原本パスは
-   ルート側を基準にする**（原本を指す相対パスがターゲットの外から始まる）。
-   `--tpl-home` / `$LLMTPL_HOME` / `bundle_root` のどれで指しても同じ
-
-### 制約
-
-- 生成対象は `.md` と `.json` だけ（他の拡張子はスキップして報告する）
-- `settings.local.json` の生成は opt-in（`settings.local.json.tmpl` を置いたターゲットだけ）。
-  Claude Code が `/model` や `/permissions` で書き込むライブファイルなので、生成物にすると
-  その書き込みは次回 apply でドリフト検出に引っかかり `.archive/` へ退避される（宣言が正になる）。
-  恒久化したい変更は `.tmpl` 側へ書き戻すこと。置かなければ従来どおり触らない
-- `<repo>/.claude/CLAUDE.local.md` も生成しない（Claude Code が読まない位置。リポジトリルート直下に
-  `CLAUDE.local.md.tmpl` を置けばそこがターゲットになる）
-- `--mode copy` は未実装（所有権の判定が symlink の字面に依存している）
-- バンドル間の依存宣言は無い（断片は他のフラグに依存しないよう書く）
-
-## チームで使うと、静かに壊れる場所がある
-
-> 紹介記事の初版から移した節（初見向けには詳しすぎるため）。チーム運用 /
-> トラブルシューティングの別記事の下書きとしてそのまま残している。文体が記事調なのはそのため。
-> 「冒頭に挙げた ③④」は元記事の「hook の登録と実体だけが残ると、誰も読まない検証が走り続ける」を指す。
-
-生成物（`CLAUDE.md` / `settings.json`）はコミットします。フラグを 1 行変えた結果が「AI がどう変わるか」の diff としてレビューに出るので、そのほうが得だからです。一方 **symlink は `.gitignore` します**。git は symlink を「リンク先の文字列」として保存できてしまいます。コミットすると、llmtpl を持っていない人が clone した瞬間に、実体の無いリンクだけを掴むことになります。
-
-ということは。**hook の登録は `settings.json` 経由で全員に届き、スクリプトの実体は届かない。** このとき何が起きるのか、推測をやめて測りました。
-
-hook の登録だけがあって `verify.sh` が無いディレクトリで、Claude Code を 1 往復させます。
+`status` prints a matrix of effective values, one row per target and one column per flag. Measured
+from the README demo plus a `review` bundle and a `tools/.claude`:
 
 ```console
-$ ls .claude/hooks/          # 空
-$ claude -p "Reply with exactly: ok"
-ok
-$ echo $?
-0
+$ llmtpl status
+2 targets
+bundle root: /path/to/demo/llm-tpl (found by walking up)
+target  hello  review
+proj    ON     -
+tools   ON     ON
 ```
 
-**セッションは普通に終わります。** 落ちない、止まらない、答えも返る、終了コードも 0。標準エラー出力にも何も出ません。代わりに、応答を終えるたびに通知が 1 つ立ちます。
+## How composition works
 
-```json
-{"type":"system","subtype":"notification","key":"stop-hook-error",
- "text":"Stop hook error occurred · ctrl+o to see","priority":"immediate"}
-```
+**Markdown (`*.md.tmpl`)** — fragments at the same relative path in every ON bundle are collected and
+inserted at a slot or at the end. Line 1 of the generated file carries `<!-- GENERATED ... -->` (an
+HTML comment, so it costs no tokens in Claude Code's context).
 
-対話画面に出るのは `Stop hook error occurred · ctrl+o to see` の 1 行だけで、中身は `ctrl+o` を押すまで畳まれています。つまり**「動いているように見えて、検証だけが毎回黙って走っていない」**。冒頭に挙げた「③④ だけ残ると誰も読まない検証が走り続ける」の裏返しで、走らないぶん気づきにくさでは上です。
+**JSON (`*.json.tmpl`)** — fragments from ON bundles are deep-merged, and the target's own file is
+layered last (the more specific wins). Bundles apply in name order. Objects merge recursively, arrays
+union, scalars take the later value.
 
-対策は「clone したら `llmtpl apply` を 1 回叩く」を手順に入れること。**チームで使うならバンドル置き場をリポジトリの中（`llm-tpl/`）に置いてしまうのが一番手数が少ないです** —— clone した時点で置き場も一緒に来るので、`apply` 1 回で完結します。
+**Directories** — `.claude/rules` is **folded into a single directory** at `.claude/rules/<flag>`;
+everything else (`skills`, `agents`, `commands`, `hooks`) is symlinked **entry by entry**. The
+asymmetry comes from Claude Code: `.claude/rules/` is searched recursively for `.md`, so it can be
+folded, while skills are discovered as `<name>/SKILL.md` and cannot take an extra level. Folding has a
+side benefit — names inside `rules/<flag>/` are yours to choose.
+
+Ownership of a link is decided by **whether the link points inside the bundle root**. That is why
+anything belonging to the target itself (a hand-written `rules/foo.md`, say) survives being turned off.
+
+## Template syntax
+
+**Everything inside a `.tmpl` is evaluated as a Go template.** A line containing `{{ }}` — documenting
+GitHub Actions' `${{ }}`, for instance — stops with a parse error. Nothing is silently dropped, and
+`--dry-run` shows it. To keep a literal `{{`, write `{{"{{"}}`.
+
+| Syntax | Meaning |
+|---|---|
+| `{{if .wiki}} … {{else}} … {{end}}` | flag condition (nesting = AND) |
+| `{{- slot "wiki"}}` | a slot; put it on a line of its own (`{{-` eats the preceding newline) |
+| `{{template "part.tmpl" .}}` | call a partial from `partials/*.tmpl` (do not forget the `.`) |
+| `{{/* comment */}}` | absent from the generated file. `<!-- -->` **does appear**, so do not use it |
+
+Flags arrive as **the set of every bundle name**, so `{{if}}` can reference a bundle that no conf
+mentions (its value is false). Only a name that does not exist at all is an error.
+
+**The leading newline of a fragment is the author's decision.** A fragment starting with `## Heading`
+should carry one blank line at the front (without it the heading butts against the preceding bullet
+list). A fragment meant to continue the previous list should not. The engine normalizes trailing
+newlines only; it never touches the front.
+
+## Living with it
+
+### Archiving
+
+**An existing file is archived before being overwritten.** When llmtpl finds a file without its
+generated marker, it copies it to `.archive/<label>.bk.<timestamp>` before writing. The archive lives
+**directly under the target**, and the label is the path relative to the target (`.claude-CLAUDE.md`,
+for example). JSON cannot carry a comment, so `.llmtpl-state.json` (a hash of what was generated)
+decides "is this mine?" instead. Delete that file and an existing `settings.json` is archived as an
+unknown file.
+
+**Hand edits to a generated file are lost, not archived** (the marker identifies it as "what I wrote
+last time"). Edit the `*.tmpl` source instead.
+
+### The cost of generating into `~/.claude`
+
+**Making `~/.claude/settings.json` a generated file has a price.** Claude Code's own writes
+(`/model`, `/config`, `/plugin`, `/permissions`) are archived away by the next apply. Anything you
+want to keep belongs in `settings.json.tmpl`. For the same reason, generating `~/.claude/CLAUDE.md`
+means losing `#` quick memories at the next apply. **Generating `settings.json` is opt-in** (only
+targets that place a `*.json.tmpl`), so the safe move is to leave it alone until you need it.
+
+### Not guaranteed
+
+1. A bundle fragment does not land unless the target has a `*.tmpl` at the same relative path
+   (`apply` / `check` say so in one line, but it is not an error)
+2. A symlink llmtpl did not create is deleted anyway if it points inside the bundle root
+3. A failed link is not rolled back — the generated files stay
+4. **Turning the same bundle on for several targets is not detected as double distribution** (the
+   same skill can land in both user scope and project scope)
+5. **When the bundle root lives in the same repository as the target, the source path in the
+   `GENERATED` header is relative to the root** (so it starts outside the target). This holds whether
+   you point at it with `--tpl-home`, `$LLMTPL_HOME`, or `bundle_root`
+
+### Constraints
+
+- Only `.md` and `.json` are generated (other extensions are skipped and reported)
+- Generating `settings.local.json` is opt-in (only targets that place a `settings.local.json.tmpl`).
+  Claude Code writes to it live via `/model` and `/permissions`, so making it a generated file means
+  those writes trip drift detection at the next apply and land in `.archive/` (the declaration wins).
+  Write anything you want to keep back into the `.tmpl`. Place no template and llmtpl leaves it alone
+- `<repo>/.claude/CLAUDE.local.md` is not generated either (Claude Code does not read it there; place
+  a `CLAUDE.local.md.tmpl` at the repository root and that becomes a target)
+- `--mode copy` is not implemented (ownership is decided from the literal text of a symlink)
+- Bundles cannot declare dependencies on each other (write fragments that do not depend on other flags)

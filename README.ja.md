@@ -19,7 +19,7 @@ logcheck = true
 作者は Claude Code + 複数リポジトリ × 8 バンドルで日常運用している。CLI のメッセージは日本語。
 
 この README は「使い始めるまで」を扱う。仕様の細部と、その仕様になっている理由は
-[docs/reference.md](docs/reference.md) にある。
+[docs/reference.ja.md](docs/reference.ja.md) にある。
 
 ## 機能をひとつ足すと、置き場が種類ごとに散る
 
@@ -280,7 +280,7 @@ CI に置けるようになる。
 上書き・削除する。既存の手書きファイルは `.archive/` へ退避してから上書きする（黙って潰さない）。
 
 差し込む位置を選ぶ **slot（受け口）**・条件分岐や部品化の**テンプレ文法**・全リポジトリ共通の
-既定フラグ（`defaults.conf`）・マージの優先順位・所有権の判定は [reference](docs/reference.md) にある
+既定フラグ（`defaults.conf`）・マージの優先順位・所有権の判定は [reference](docs/reference.ja.md) にある
 （使わなくても全部動く）。
 
 ## コマンド
@@ -297,7 +297,7 @@ CI に置けるようになる。
 
 バンドル置き場は各ターゲットから**親を辿って自動で見つかる**（`llm-tpl/` を親方向に置いて使う限り
 何も書かなくてよい）。親方向に無い場所に置くときは `llmtpl.conf` の予約キー `bundle_root` でパスを明示する。
-探索の範囲・解決順・`bundle_root` の細則は [reference](docs/reference.md#探索とバンドルルートの解決)。
+探索の範囲・解決順・`bundle_root` の細則は [reference](docs/reference.ja.md#探索とバンドルルートの解決)。
 
 ## 使う前に知るべきこと
 
@@ -308,7 +308,7 @@ CI に置けるようになる。
 - **生成物への手編集は次回 apply で消える**（退避されない）。編集は必ず原本の `*.tmpl` 側へ
 
 退避の仕組み・`~/.claude` を生成物にするときの代償・保証しないことの全リスト・制約・
-チーム運用（clone 後に何が起きるか）は [reference](docs/reference.md#使う上での細則) にある。
+チーム運用（clone 後に何が起きるか）は [reference](docs/reference.ja.md#使う上での細則) にある。
 
 ## 開発
 

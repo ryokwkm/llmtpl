@@ -1,13 +1,19 @@
 # 配置先は BIN で差し替えられる（配布スクリプトから `make update BIN=...` で叩ける）
 BIN ?= $(HOME)/.local/bin/llmtpl
 
+# 手元ビルドにも版を埋める。埋めないと `llmtpl --version` が常に "dev" を返し、
+# **入っているバイナリが最新かを version から判断できない**（配布の反映漏れを
+# ファイルの更新日時で調べる羽目になる。2026-08-26 に実際に起きた）。
+# リリース版の版番号は GoReleaser が別途 -X で埋める。
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 .PHONY: help build test vet fmt install install-completion update
 
 help: ## このヘルプを表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 build: ## バイナリを $(BIN) へビルド
-	go build -o $(BIN) .
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN) .
 
 test: ## 全テスト
 	go test ./...

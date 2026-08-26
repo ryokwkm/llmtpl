@@ -135,7 +135,7 @@ $ cd proj && llmtpl apply
 （1 行目は llmtpl が入れる生成マーカ）。
 
 ```markdown
-<!-- GENERATED — 直接編集禁止。原本: proj/.claude/CLAUDE.md.tmpl（編集は原本 → llmtpl apply で反映） -->
+<!-- GENERATED — do not edit directly. Source: proj/.claude/CLAUDE.md.tmpl (edit the source, then run llmtpl apply) -->
 # proj のAI指示
 
 - Go で書く。

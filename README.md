@@ -132,7 +132,7 @@ All four landed. The generated `CLAUDE.md` is the base with the bundle's instruc
 (line 1 is a marker llmtpl adds):
 
 ```markdown
-<!-- GENERATED — 直接編集禁止。原本: proj/.claude/CLAUDE.md.tmpl（編集は原本 → llmtpl apply で反映） -->
+<!-- GENERATED — do not edit directly. Source: proj/.claude/CLAUDE.md.tmpl (edit the source, then run llmtpl apply) -->
 # Instructions for proj
 
 - Write it in Go.

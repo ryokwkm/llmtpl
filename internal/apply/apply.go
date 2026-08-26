@@ -44,7 +44,10 @@ const (
 	// HTML コメントは Claude Code の context 注入前に除去されるためトークンを消費しない。
 	GeneratedMarker = "<!-- GENERATED"
 
-	headerFormat = GeneratedMarker + " — 直接編集禁止。原本: %s（編集は原本 → llmtpl apply で反映） -->"
+	// headerFormat は生成物の中身なので **internal/msg のカタログに入れず英語で固定する**。
+	// ロケール依存にすると、日本語マシンと英語マシンで apply するたびにヘッダが書き換わり、
+	// git 管理下の生成物が延々と衝突する。人向けの文というよりツールが読む目印なので英語で固定。
+	headerFormat = GeneratedMarker + " — do not edit directly. Source: %s (edit the source, then run llmtpl apply) -->"
 
 	archiveDirName = ".archive"
 )

@@ -164,7 +164,7 @@ func Test多バイト本文はそのまま通過(t *testing.T) {
 func Testヘッダは指定時だけ先頭1行に入る(t *testing.T) {
 	dir := t.TempDir()
 	tmpl := writeFile(t, dir, "a.tmpl", "x\n")
-	header := "<!-- GENERATED — 直接編集禁止。原本: a.tmpl -->"
+	header := "<!-- GENERATED — do not edit directly. Source: a.tmpl -->"
 
 	res, err := renderSets(t, tmpl, nil, header, nil)
 	if err != nil {

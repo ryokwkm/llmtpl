@@ -19,6 +19,8 @@ type Catalog struct {
 	Link    LinkMsg
 	Flags   FlagsMsg
 	Bundle  BundleMsg
+	Apply   ApplyMsg
+	Cmd     CmdMsg
 }
 
 // M は選択済みのカタログ。プロセス起動時に環境変数から決まる。

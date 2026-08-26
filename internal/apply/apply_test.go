@@ -9,6 +9,8 @@ import (
 
 	"github.com/ryokwkm/llmtpl/internal/bundle"
 	"github.com/ryokwkm/llmtpl/internal/state"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // テストは実運用と同じ <repo>/.claude 構造で行う（ターゲットの規約は
@@ -260,7 +262,7 @@ func TestLoadRoot_予約キーと同名のバンドルはエラー(t *testing.T)
 	if err == nil {
 		t.Fatal("予約キーと同名のバンドルがエラーになりません")
 	}
-	if !strings.Contains(err.Error(), "予約キー") {
+	if !strings.Contains(err.Error(), msg.Lit(msg.M.Apply.ReservedBundleName)) {
 		t.Errorf("理由がメッセージに無い: %v", err)
 	}
 }
@@ -757,7 +759,8 @@ func TestRun_受け口名がバンドル名でなければエラー(t *testing.T
 			if err == nil {
 				t.Fatal("バンドル名でない受け口がエラーになりません")
 			}
-			if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "有効: wiki") {
+			if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), msg.Lit(msg.M.Apply.UnknownSlot)) ||
+				!strings.Contains(err.Error(), "wiki") {
 				t.Errorf("メッセージが不正: %v", err)
 			}
 		})
@@ -1112,7 +1115,7 @@ func TestApply_バンドル配下はターゲットにできない(t *testing.T)
 	if err == nil {
 		t.Fatal("エラーを期待したが nil")
 	}
-	if !strings.Contains(err.Error(), "バンドル") {
+	if !strings.Contains(err.Error(), msg.Lit(msg.M.Apply.TargetUnderRoot)) {
 		t.Errorf("理由が示されていない: %v", err)
 	}
 }

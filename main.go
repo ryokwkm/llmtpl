@@ -20,6 +20,7 @@ import (
 	"github.com/ryokwkm/llmtpl/internal/bundle"
 	"github.com/ryokwkm/llmtpl/internal/flags"
 	"github.com/ryokwkm/llmtpl/internal/link"
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 // version は -ldflags "-X main.version=..." で埋める。
@@ -34,11 +35,9 @@ func main() {
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "llmtpl",
-		Short: "LLM 設定のテンプレートエンジン",
-		Long: `llmtpl — LLM 設定（CLAUDE.md / .claude 配下）をフラグ単位のバンドルから合成する。
-
-バンドルルートの解決順: ` + apply.HomeOrder,
+		Use:           "llmtpl",
+		Short:         msg.M.Cmd.Short,
+		Long:          fmt.Sprintf(msg.M.Cmd.Long, apply.HomeOrder()),
 		Version:       version,
 		SilenceUsage:  true, // 実行時エラーで usage を撒かない（main が 1 行で出す）
 		SilenceErrors: true,
@@ -56,7 +55,7 @@ func newRootCmd() *cobra.Command {
 type diffErr struct{ n int }
 
 func (e diffErr) Error() string {
-	return fmt.Sprintf("生成物が最新ではありません（%d 件の差分）。llmtpl apply を実行してください", e.n)
+	return fmt.Sprintf(msg.M.Cmd.StaleGenerated, e.n)
 }
 
 func exitCode(err error) int {
@@ -75,9 +74,9 @@ type commonFlags struct {
 
 func (c *commonFlags) register(cmd *cobra.Command, withDryRun bool) {
 	f := cmd.Flags()
-	f.StringVar(&c.tplHome, "tpl-home", "", "バンドルルート（省略時の解決順は --help の説明を参照）")
+	f.StringVar(&c.tplHome, "tpl-home", "", msg.M.Cmd.FlagTplHome)
 	if withDryRun {
-		f.BoolVar(&c.dryRun, "dry-run", false, "書き込まず差分だけ表示する")
+		f.BoolVar(&c.dryRun, "dry-run", false, msg.M.Cmd.FlagDryRun)
 	}
 }
 
@@ -85,7 +84,7 @@ func newApplyCmd(checkOnly bool) *cobra.Command {
 	c := &commonFlags{}
 	cmd := &cobra.Command{
 		Use:   "apply [dir...]",
-		Short: "生成 + 合成（既定は cwd）",
+		Short: msg.M.Cmd.ApplyShort,
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runApply(args, c, checkOnly)
@@ -93,10 +92,10 @@ func newApplyCmd(checkOnly bool) *cobra.Command {
 	}
 	if checkOnly {
 		cmd.Use = "check [dir...]"
-		cmd.Short = "生成物が最新かを検査する（差分ありで exit 2）"
+		cmd.Short = msg.M.Cmd.CheckShort
 	}
 	c.register(cmd, !checkOnly)
-	cmd.Flags().BoolVarP(&c.verbose, "verbose", "v", false, "差し込まれなかった寄稿・既存リンクも表示する")
+	cmd.Flags().BoolVarP(&c.verbose, "verbose", "v", false, msg.M.Cmd.FlagVerbose)
 	return cmd
 }
 
@@ -129,7 +128,7 @@ func newStatusCmd() *cobra.Command {
 	c := &commonFlags{}
 	cmd := &cobra.Command{
 		Use:   "status [dir...]",
-		Short: "ターゲット × フラグの実効値を表示する",
+		Short: msg.M.Cmd.StatusShort,
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			targets, root, err := resolveScope(args, c)
@@ -151,7 +150,7 @@ func newBundlesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "bundles",
 		Aliases: []string{"flags"},
-		Short:   "バンドル一覧を表示する",
+		Short:   msg.M.Cmd.BundlesShort,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			// apply と同じ経路を通す。ここが別経路だと、bundles が apply とは違うルートの
@@ -164,7 +163,7 @@ func newBundlesCmd() *cobra.Command {
 			return printBundles(root, src) // ターゲット 0 件でもカタログは出す
 		},
 	}
-	cmd.Flags().StringVar(&tplHome, "tpl-home", "", "バンドルルート（省略時の解決順は --help の説明を参照）")
+	cmd.Flags().StringVar(&tplHome, "tpl-home", "", msg.M.Cmd.FlagTplHome)
 	return cmd
 }
 
@@ -242,12 +241,13 @@ func resolveRoot(dirs []string, tplHome string) ([]apply.Target, apply.Root, str
 	}
 	targets = kept
 	if dropped > 0 {
-		fmt.Printf("バンドルルート配下の %d 件をターゲットから除外しました\n", dropped)
+		fmt.Printf(msg.M.Cmd.DroppedTargets, dropped)
 	}
 
-	label := string(src)
+	label := src.Label()
 	if src == apply.HomeFromConf {
-		label = confHome.Src + " の " + flags.KeyBundleRoot
+		// 出典は「llmtpl.conf の bundle_root」ではなく、実際に書いてある conf のパスまで出す
+		label = fmt.Sprintf(msg.M.Apply.HomeLabelConf, confHome.Src, flags.KeyBundleRoot)
 	}
 	return targets, root, label, nil
 }
@@ -260,22 +260,21 @@ func resolveScope(dirs []string, c *commonFlags) ([]apply.Target, apply.Root, er
 	}
 	if len(targets) == 0 {
 		abs, _ := absDirs(dirs)
-		return nil, apply.Root{}, fmt.Errorf("ターゲットが見つかりません: %s（配下まで探索して 0 件。"+
-			"%s か *.tmpl を持つディレクトリが対象）", strings.Join(abs, ", "), apply.TargetConfName)
+		return nil, apply.Root{}, fmt.Errorf(msg.M.Cmd.NoTargets, strings.Join(abs, ", "), apply.TargetConfName)
 	}
 	// 探索が既定で配下まで及ぶので、何件を対象にしたかを必ず見せる（誤爆の可視化）
 	if len(targets) > 1 {
-		fmt.Printf("対象 %d 件\n", len(targets))
+		fmt.Printf(msg.M.Cmd.TargetCount, len(targets))
 	}
 	// 解決したルートは常に見せる。conf 由来だと「離れた 1 ファイルが全体を変える」ので、
 	// 出典まで出さないと事故が静かになる
-	fmt.Printf("バンドルルート: %s（%s）\n", root.Dir, src)
+	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, src)
 	return targets, root, nil
 }
 
 // printReport は 1 ターゲット分の結果を表示する（判断はしない）。
 func printReport(tg apply.Target, rep apply.Report, dryRun, verbose bool) {
-	on := "（なし）"
+	on := msg.M.Cmd.OnNone
 	if len(rep.On) > 0 {
 		on = strings.Join(rep.On, ", ")
 	}
@@ -284,27 +283,27 @@ func printReport(tg apply.Target, rep apply.Report, dryRun, verbose bool) {
 	for _, t := range rep.Targets {
 		switch {
 		case t.Skipped != "":
-			fmt.Printf("  ⏭ スキップ %s — %s\n", rel(t.Dest), t.Skipped)
+			fmt.Printf(msg.M.Cmd.Skip, rel(t.Dest), t.Skipped)
 		case t.Changed && dryRun:
-			fmt.Printf("  ~ 差分あり %s\n", rel(t.Dest))
+			fmt.Printf(msg.M.Cmd.Diff, rel(t.Dest))
 		case t.Changed:
-			fmt.Printf("  ✅ 生成 %s\n", rel(t.Dest))
+			fmt.Printf(msg.M.Cmd.Generated, rel(t.Dest))
 		default:
-			fmt.Printf("  = 変更なし %s\n", rel(t.Dest))
+			fmt.Printf(msg.M.Cmd.Unchanged, rel(t.Dest))
 		}
 		if t.Archived != "" {
-			fmt.Printf("     ⚠️  生成物でない実体を退避: %s\n", t.Archived)
-			fmt.Printf("        手で編集していた場合は差分をテンプレ側へ反映してください。\n")
+			fmt.Printf(msg.M.Cmd.ArchivedEntity, t.Archived)
+			fmt.Print(msg.M.Cmd.ArchivedHint)
 		}
 		if t.WouldArchive {
-			fmt.Printf("     ⚠️  生成物でない実体があります（apply すると退避されます）\n")
+			fmt.Print(msg.M.Cmd.WouldArchive)
 		}
 	}
 
 	// 受け皿が無い断片は **既定で見せる**。apply では解消しないので差分には数えないが、
 	// 黙っていると「実体は配られたのに指示だけ届かない」状態に誰も気づけない
 	for _, o := range rep.Orphans {
-		fmt.Printf("  ⚠️  %s の %s が届いていません（このターゲットに %s が無いため。作れば入ります）\n",
+		fmt.Printf(msg.M.Cmd.Orphan,
 			o.Bundle, o.File, o.File)
 	}
 
@@ -312,24 +311,24 @@ func printReport(tg apply.Target, rep apply.Report, dryRun, verbose bool) {
 		switch l.Kind {
 		case link.KindCreated:
 			if dryRun {
-				fmt.Printf("  ~ リンク予定 %s -> %s\n", rel(l.Path), l.Target)
+				fmt.Printf(msg.M.Cmd.LinkPlanned, rel(l.Path), l.Target)
 			} else {
-				fmt.Printf("  🔗 リンク %s -> %s\n", rel(l.Path), l.Target)
+				fmt.Printf(msg.M.Cmd.Linked, rel(l.Path), l.Target)
 			}
 		case link.KindRemoved:
 			if dryRun {
-				fmt.Printf("  ~ リンク解除予定 %s\n", rel(l.Path))
+				fmt.Printf(msg.M.Cmd.UnlinkPlanned, rel(l.Path))
 			} else {
-				fmt.Printf("  ✂️  リンク解除 %s\n", rel(l.Path))
+				fmt.Printf(msg.M.Cmd.Unlinked, rel(l.Path))
 			}
 		case link.KindArchived:
-			fmt.Printf("     ⚠️  リンク先に実体があったため退避: %s\n", l.Note)
+			fmt.Printf(msg.M.Cmd.LinkArchived, l.Note)
 		case link.KindConflict:
 			// apply では解消しない設定ミスなので、差分に数えない代わりに常に見せる
-			fmt.Printf("     ⚠️  名前衝突: %s\n", l.Note)
+			fmt.Printf(msg.M.Cmd.LinkConflict, l.Note)
 		case link.KindKept:
 			if verbose {
-				fmt.Printf("     = リンク済み %s\n", rel(l.Path))
+				fmt.Printf(msg.M.Cmd.LinkKept, rel(l.Path))
 			}
 		}
 	}
@@ -338,11 +337,11 @@ func printReport(tg apply.Target, rep apply.Report, dryRun, verbose bool) {
 func printStatus(targets []apply.Target, root apply.Root) error {
 	names := root.Names() // バンドルルートの行は resolveScope が出す
 	if len(names) == 0 {
-		fmt.Println("（バンドルがありません）")
+		fmt.Println(msg.M.Cmd.NoBundles)
 		return nil
 	}
 
-	rows := [][]string{append([]string{"ターゲット"}, names...)}
+	rows := [][]string{append([]string{msg.M.Cmd.ColTarget}, names...)}
 	for _, tg := range targets {
 		eff, err := root.Flags(tg)
 		if err != nil {
@@ -364,8 +363,8 @@ func printStatus(targets []apply.Target, root apply.Root) error {
 }
 
 func printBundles(root apply.Root, src string) error {
-	fmt.Printf("バンドルルート: %s（%s）\n", root.Dir, src)
-	rows := [][]string{{"バンドル", "内容", "説明"}}
+	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, src)
+	rows := [][]string{{msg.M.Cmd.ColBundle, msg.M.Cmd.ColContents, msg.M.Cmd.ColDesc}}
 	for _, b := range root.Bundles {
 		meta, err := bundle.LoadMeta(b)
 		if err != nil {

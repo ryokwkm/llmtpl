@@ -27,6 +27,8 @@ import (
 	"github.com/ryokwkm/llmtpl/internal/mergejson"
 	"github.com/ryokwkm/llmtpl/internal/render"
 	"github.com/ryokwkm/llmtpl/internal/state"
+
+	"github.com/ryokwkm/llmtpl/internal/msg"
 )
 
 const (
@@ -135,7 +137,7 @@ func LoadRoot(dir string) (Root, error) {
 		// パーサが横取りするため **そのバンドルは永久に ON にできず、known に名前があるので
 		// Validate も何も言わない**（静かな死）。ここで殺す
 		if flags.IsReserved(b.Name) {
-			return Root{}, fmt.Errorf("%s: バンドル名に予約キーは使えません（conf で同名のフラグを ON にできなくなるため）。ディレクトリ名を変えてください", b.Dir)
+			return Root{}, fmt.Errorf(msg.M.Apply.ReservedBundleName, b.Dir)
 		}
 		known[b.Name] = true
 	}
@@ -153,7 +155,7 @@ func LoadRoot(dir string) (Root, error) {
 	// defaults.conf はバンドルルートの中にあるので、そこでルートを指定するのは定義上「遅すぎる」。
 	// 黙って無視すると書いた本人が永久に気づけないので落とす
 	if defaults.BundleRoot != "" {
-		return Root{}, fmt.Errorf("%s:%d: %s は %s には書けません（このファイル自体がバンドルルートの中にあるため、読む時点でルートは解決済み）。--tpl-home / 環境変数 %s / ターゲットの %s のいずれかを使ってください",
+		return Root{}, fmt.Errorf(msg.M.Apply.BundleRootInDefaults,
 			defaultsPath, defaults.BundleRootLine, flags.KeyBundleRoot, DefaultsConfName, EnvHome, TargetConfName)
 	}
 	if err := flags.Validate(defaults.Flags, known, defaultsPath); err != nil {
@@ -208,7 +210,7 @@ func (r Root) checkSlot(slot, srcPath string) error {
 		return nil
 	}
 	if !r.Known[slot] {
-		return fmt.Errorf("%s: slot %q に対応するバンドルがありません（タイポ？ 有効: %s）",
+		return fmt.Errorf(msg.M.Apply.UnknownSlot,
 			srcPath, slot, strings.Join(r.Names(), ", "))
 	}
 	return nil
@@ -222,7 +224,7 @@ func (r Root) checkNotBundle(dir string) error {
 	if !Under(r.Dir, dir) && filepath.Clean(dir) != filepath.Clean(r.Dir) {
 		return nil
 	}
-	return fmt.Errorf("%s はバンドルルート（%s）の配下です。バンドルの断片はターゲットにできません", dir, r.Dir)
+	return fmt.Errorf(msg.M.Apply.TargetUnderRoot, dir, r.Dir)
 }
 
 // Under は path が base の配下（base 自身は含まない）かを返す。
@@ -250,14 +252,14 @@ func (r Root) Apply(c Target, o Options) (Report, error) {
 	// **全フラグ OFF で黙って生成**され、CLAUDE.md と settings.json が薄い内容で上書きされる。
 	for _, ov := range targetLayers(c.Dir) {
 		if isFile(filepath.Join(c.Dir, ov, TargetConfName)) {
-			return rep, fmt.Errorf("%s は読まれません（ターゲットはプロジェクトルートです）。%s へ移してください",
+			return rep, fmt.Errorf(msg.M.Apply.NotReadAtThisPath,
 				filepath.Join(c.Dir, ov, TargetConfName), filepath.Join(c.Dir, TargetConfName))
 		}
 	}
 	// ターゲットの basename がオーバーレイ層名 = 1 階層下から叩いた誤り。
 	// そのまま通すと conf が見つからず全フラグ OFF になる。
 	if strings.HasPrefix(filepath.Base(c.Dir), ".") {
-		return rep, fmt.Errorf("%s はターゲットではなく %s のオーバーレイ層です。親ディレクトリで実行してください",
+		return rep, fmt.Errorf(msg.M.Apply.IsOverlayLayer,
 			c.Dir, filepath.Dir(c.Dir))
 	}
 
@@ -453,7 +455,7 @@ func (x *run) target(tmplRel string, hashes map[string]string) (TargetReport, er
 		// <repo>/.claude/CLAUDE.local.md は読まれない。読まれない生成物を黙って作らず loud に落とす。
 		// **判定材料はその生成物の実出力先**（ターゲット直下かどうか）であって、ターゲットの名前ではない。
 		// settings.local.json はこの逆（.claude/ 配下が読まれる位置）なので .md に限定する。
-		return tr, fmt.Errorf("%s は %s/ 配下では生成対象外です（Claude Code が読まない位置のため。%s はターゲット直下へ置いてください）: %s",
+		return tr, fmt.Errorf(msg.M.Apply.NotGeneratedUnderLayer,
 			base, filepath.Dir(name), filepath.Base(tmplPath), tmplPath)
 	case strings.HasSuffix(base, ".md"):
 		content, err = x.markdown(tmplRel)
@@ -463,7 +465,7 @@ func (x *run) target(tmplRel string, hashes map[string]string) (TargetReport, er
 		opts.KnownHash = x.st.Get(name)
 		trackHash = true
 	default:
-		tr.Skipped = "未対応の種類（.md / .json のみ）"
+		tr.Skipped = msg.M.Apply.SkippedUnsupported
 		return tr, nil
 	}
 	if err != nil {
@@ -643,7 +645,7 @@ func targetTemplates(dir string) ([]string, error) {
 	for _, layer := range append([]string{"."}, targetLayers(dir)...) {
 		hits, err := filepath.Glob(filepath.Join(dir, layer, "*.tmpl"))
 		if err != nil {
-			return nil, fmt.Errorf("テンプレの探索に失敗: %w", err)
+			return nil, fmt.Errorf(msg.M.Apply.TmplScanFailed, err)
 		}
 		for _, h := range hits {
 			rel, err := filepath.Rel(dir, h)
@@ -686,8 +688,9 @@ func flatten(rel string) string {
 
 // HomeOrder はバンドルルートの解決順（表示用の唯一の正）。
 // 以前は README・cobra の Long・help・エラー文の 4〜5 箇所に別々の文字列で散っていた。
-const HomeOrder = "--tpl-home → 環境変数 " + EnvHome + " → " + TargetConfName + " の " +
-	flags.KeyBundleRoot + " → 親を辿って " + BundleDirName + "/ → ~/.config/llmtpl"
+func HomeOrder() string {
+	return fmt.Sprintf(msg.M.Apply.HomeOrder, EnvHome, TargetConfName, flags.KeyBundleRoot, BundleDirName)
+}
 
 // ConfHome は conf 由来のバンドルルート指定。ゼロ値は「どの conf も指定していない」。
 type ConfHome struct {
@@ -714,7 +717,7 @@ func ScanConfHome(targets []Target) (ConfHome, error) {
 		}
 		cur := ConfHome{Dir: conf.BundleRoot, Src: fmt.Sprintf("%s:%d", path, conf.BundleRootLine)}
 		if out.Dir != "" && out.Dir != cur.Dir {
-			return ConfHome{}, fmt.Errorf("%s の指定が食い違っています（同じ実行で 1 つに定まりません）:\n  %s → %s\n  %s → %s",
+			return ConfHome{}, fmt.Errorf(msg.M.Apply.ConfHomeConflict,
 				flags.KeyBundleRoot, out.Src, out.Dir, cur.Src, cur.Dir)
 		}
 		out = cur
@@ -727,12 +730,30 @@ func ScanConfHome(targets []Target) (ConfHome, error) {
 type HomeSource string
 
 const (
-	HomeFromFlag   HomeSource = "--tpl-home"
-	HomeFromEnv    HomeSource = "環境変数 " + EnvHome
-	HomeFromConf   HomeSource = TargetConfName + " の " + flags.KeyBundleRoot
-	HomeFromWalkUp HomeSource = "親探索"
-	HomeFromXDG    HomeSource = "XDG"
+	HomeFromFlag   HomeSource = "flag"
+	HomeFromEnv    HomeSource = "env"
+	HomeFromConf   HomeSource = "conf"
+	HomeFromWalkUp HomeSource = "walkup"
+	HomeFromXDG    HomeSource = "xdg"
 )
+
+// Label は表示用の文言を返す。識別子と表示を分けてあるので、== による比較は
+// ロケールに左右されない（分けないと、言語を切り替えた瞬間に比較が全部外れる）。
+func (h HomeSource) Label() string {
+	switch h {
+	case HomeFromEnv:
+		return fmt.Sprintf(msg.M.Apply.HomeLabelEnv, EnvHome)
+	case HomeFromConf:
+		return fmt.Sprintf(msg.M.Apply.HomeLabelConf, TargetConfName, flags.KeyBundleRoot)
+	case HomeFromWalkUp:
+		return msg.M.Apply.HomeLabelWalkUp
+	case HomeFromFlag:
+		return "--tpl-home"
+	case HomeFromXDG:
+		return "XDG"
+	}
+	return string(h)
+}
 
 // FindTplHome はバンドルルートを解決する。優先順は HomeOrder。
 //
@@ -744,14 +765,14 @@ const (
 func FindTplHome(explicit string, conf ConfHome, start string) (string, HomeSource, error) {
 	if explicit != "" {
 		if !isDir(explicit) {
-			return "", "", fmt.Errorf("指定されたバンドルルートがありません: %s", explicit)
+			return "", "", fmt.Errorf(msg.M.Apply.ExplicitHomeMissing, explicit)
 		}
 		abs, err := filepath.Abs(explicit)
 		return abs, HomeFromFlag, err
 	}
 	if env := os.Getenv(EnvHome); env != "" {
 		if !isDir(env) {
-			return "", "", fmt.Errorf("%s が指すバンドルルートがありません: %s", EnvHome, env)
+			return "", "", fmt.Errorf(msg.M.Apply.EnvHomeMissing, EnvHome, env)
 		}
 		abs, err := filepath.Abs(env)
 		return abs, HomeFromEnv, err
@@ -759,7 +780,7 @@ func FindTplHome(explicit string, conf ConfHome, start string) (string, HomeSour
 	if conf.Dir != "" {
 		// conf 由来は resolveConfPath が既に絶対化している
 		if !isDir(conf.Dir) {
-			return "", "", fmt.Errorf("%s: %s が指すバンドルルートがありません: %s", conf.Src, flags.KeyBundleRoot, conf.Dir)
+			return "", "", fmt.Errorf(msg.M.Apply.ConfHomeMissing, conf.Src, flags.KeyBundleRoot, conf.Dir)
 		}
 		return conf.Dir, HomeFromConf, nil
 	}
@@ -769,7 +790,7 @@ func FindTplHome(explicit string, conf ConfHome, start string) (string, HomeSour
 	if xdg := xdgHome(); xdg != "" && isDir(xdg) {
 		return xdg, HomeFromXDG, nil
 	}
-	return "", "", fmt.Errorf("バンドルルートが見つかりません。次のいずれかで指定してください: %s", HomeOrder)
+	return "", "", fmt.Errorf(msg.M.Apply.HomeNotFound, HomeOrder())
 }
 
 // walkUpForBundleRoot は start から親へ辿って <dir>/llm-tpl を探す。
@@ -866,7 +887,7 @@ func DiscoverTargets(start string) ([]Target, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("ターゲットの探索に失敗: %w", err)
+		return nil, fmt.Errorf(msg.M.Apply.TargetScanFailed, err)
 	}
 	return out, nil
 }

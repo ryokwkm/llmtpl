@@ -79,3 +79,65 @@ type BundleMsg struct {
 	NoColon         string // 引数: 行, 行の内容
 	EmptyKey        string // 引数: 行, 行の内容
 }
+
+// ApplyMsg は internal/apply の文言。
+type ApplyMsg struct {
+	ReservedBundleName     string // 引数: バンドルのパス
+	BundleRootInDefaults   string // 引数: conf パス, 行, キー, ファイル名, 環境変数名, ターゲットの conf 名
+	UnknownSlot            string // 引数: テンプレパス, slot 名, 有効なバンドル名
+	TargetUnderRoot        string // 引数: ディレクトリ, バンドルルート
+	NotReadAtThisPath      string // 引数: 見つけたパス, あるべきパス
+	IsOverlayLayer         string // 引数: ディレクトリ, 既定オーバーレイ
+	NotGeneratedUnderLayer string // 引数: テンプレ, 層, 置くべき名前, パス
+	SkippedUnsupported     string
+	TmplScanFailed         string // 引数: err
+	HomeOrder              string // 引数: 環境変数名, ターゲット conf 名, 予約キー, バンドルディレクトリ名
+	ConfHomeConflict       string // 引数: キー, 出典 A, 値 A, 出典 B, 値 B
+	HomeLabelEnv           string // 引数: 環境変数名
+	HomeLabelConf          string // 引数: conf の出典, 予約キー
+	HomeLabelWalkUp        string
+	ExplicitHomeMissing    string // 引数: 指定されたパス
+	EnvHomeMissing         string // 引数: 環境変数名, 値
+	ConfHomeMissing        string // 引数: conf の出典, キー, 値
+	HomeNotFound           string // 引数: 解決順
+	TargetScanFailed       string // 引数: err
+}
+
+// CmdMsg は CLI（main）の文言。--help とレポート表示。
+type CmdMsg struct {
+	Short          string
+	Long           string // 引数: 解決順
+	StaleGenerated string // 引数: 差分件数
+	FlagTplHome    string
+	FlagDryRun     string
+	FlagVerbose    string
+	ApplyShort     string
+	CheckShort     string
+	StatusShort    string
+	BundlesShort   string
+	DroppedTargets string // 引数: 除外件数
+	NoTargets      string // 引数: 探索したディレクトリ, ターゲットの目印ファイル名
+	TargetCount    string // 引数: 件数
+	BundleRootLine string // 引数: バンドルルート, 出典
+	OnNone         string
+	Skip           string // 引数: 生成先, 理由
+	Diff           string // 引数: 生成先
+	Generated      string // 引数: 生成先
+	Unchanged      string // 引数: 生成先
+	ArchivedEntity string // 引数: 退避先
+	ArchivedHint   string
+	WouldArchive   string
+	Orphan         string // 引数: バンドル名, 断片名, 断片名
+	LinkPlanned    string // 引数: リンクパス, リンク先
+	Linked         string // 引数: リンクパス, リンク先
+	UnlinkPlanned  string // 引数: リンクパス
+	Unlinked       string // 引数: リンクパス
+	LinkArchived   string // 引数: 備考
+	LinkConflict   string // 引数: 備考
+	LinkKept       string // 引数: リンクパス
+	NoBundles      string
+	ColTarget      string
+	ColBundle      string
+	ColContents    string
+	ColDesc        string
+}

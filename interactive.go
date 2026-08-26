@@ -139,10 +139,10 @@ func isInteractive() bool {
 	return xterm.IsTerminal(os.Stdin.Fd()) && xterm.IsTerminal(os.Stdout.Fd())
 }
 
-// optionChrome は huh が 1 行の先頭へ付ける飾りの幅（カーソル "> " + 選択印 "✓ "）と、
+// optionChrome は huh が 1 行の先頭へ付ける飾りの幅（カーソル "> " + 選択印 "[x] "）と、
 // フォームの枠・余白の見積もり。**多めに取る** —— 1 桁でも溢れると折り返して
 // viewport の高さ計算が崩れる（optionLabel の注記を参照）。
-const optionChrome = 8
+const optionChrome = 10
 
 // labelWidth は 1 行に使ってよい表示幅。端末幅が取れなければ 80 桁とみなす。
 func labelWidth() int {
@@ -180,8 +180,22 @@ func askConfirm(title string) (bool, error) {
 			Affirmative(msg.M.Interactive.Affirmative).
 			Negative(msg.M.Interactive.Negative).
 			Value(&ok),
-	)).Run()
+	)).WithTheme(theme()).Run()
 	return ok, err
+}
+
+// theme は既定（ThemeCharm）の印を `[x]` / `[ ]` へ差し替えたもの。
+//
+// 既定は選択を `✓` の**色**で表すが、ON/OFF がひと目で分からない —— 色は
+// 明るい端末や色覚特性で落ちるうえ、`✓` と `•` は形が近い。角括弧なら
+// 中身の有無そのものが状態なので、色が無くても読める（色は補強として残す）。
+func theme() *huh.Theme {
+	t := huh.ThemeCharm()
+	t.Focused.SelectedPrefix = t.Focused.SelectedPrefix.SetString("[x] ")
+	t.Focused.UnselectedPrefix = t.Focused.UnselectedPrefix.SetString("[ ] ")
+	t.Blurred.SelectedPrefix = t.Blurred.SelectedPrefix.SetString("[x] ")
+	t.Blurred.UnselectedPrefix = t.Blurred.UnselectedPrefix.SetString("[ ] ")
+	return t
 }
 
 // confirmCreate は conf の無いディレクトリで、作ってよいかを確かめる。
@@ -253,15 +267,18 @@ func askFlags(items []item) ([]string, error) {
 	}
 
 	// Height は指定しない。未設定なら huh が選択肢の数に合わせて全部を 1 画面へ収める
-	// （固定値を渡すと title/description の分を引いた上で下限に丸められ、狭い端末で崩れる）
+	// （固定値を渡すと title/description の分を引いた上で下限に丸められ、狭い端末で崩れる）。
+	//
+	// **Description も置かない**。huh が最下部に出す help（`x toggle / enter submit / …`）と
+	// 内容が重なるうえ、1 行使うぶん一覧が縦に伸びる。**端末の高さが足りないと huh は黙って
+	// スクロールし、先頭のバンドルが画面の外へ出る**（スクロールバーが出ないので消えて見える）
 	var picked []string
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title(msg.M.Interactive.SelectTitle).
-			Description(msg.M.Interactive.SelectHelp).
 			Options(opts...).
 			Value(&picked),
-	)).Run()
+	)).WithTheme(theme()).Run()
 	return picked, err
 }
 

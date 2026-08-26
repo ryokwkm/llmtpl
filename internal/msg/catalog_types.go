@@ -154,7 +154,6 @@ type InteractiveMsg struct {
 	CreateConfirm    string // 引数: conf パス
 	CreateDeclined   string // 引数: conf 名
 	SelectTitle      string
-	SelectHelp       string
 	DefaultOnNote    string
 	Changes          string
 	ChangeReplace    string // 引数: フラグ名, 旧値, 新値

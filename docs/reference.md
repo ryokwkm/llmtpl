@@ -145,6 +145,10 @@ wrapped would take more screen lines than the list reckons with, pushing the fir
 top. Only the description is shortened — the flag name and the default-on note always stay. Widen
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
+⚠️ **When the terminal is shorter than the list, it scrolls and shows no scrollbar.** The first
+entries may simply be above the fold, so press ↑ if the count looks wrong (`llmtpl bundles` prints
+all of them, which is the reliable way to compare).
+
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and
 would regenerate sibling targets you did not just edit; the interactive mode edits one conf, so it
 applies one target and tells you how many others exist.

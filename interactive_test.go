@@ -462,6 +462,56 @@ func TestOptionLabel_既定ONの注記は説明より優先(t *testing.T) {
 	}
 }
 
+// ON/OFF は色ではなく角括弧の中身で表す（色は明るい端末や色覚特性で落ちる）。
+// 既定の ThemeCharm は `✓` / `•` に上書きするので、こちらで戻していることを固定する。
+func TestTheme_チェックボックスは角括弧(t *testing.T) {
+	th := theme()
+	cases := []struct {
+		name  string
+		style string
+		want  string
+	}{
+		{"選択（フォーカス）", th.Focused.SelectedPrefix.String(), "[x] "},
+		{"未選択（フォーカス）", th.Focused.UnselectedPrefix.String(), "[ ] "},
+		{"選択（非フォーカス）", th.Blurred.SelectedPrefix.String(), "[x] "},
+		{"未選択（非フォーカス）", th.Blurred.UnselectedPrefix.String(), "[ ] "},
+	}
+	for _, c := range cases {
+		// 色の ANSI が付くので、中身が含まれているかで見る
+		if !strings.Contains(c.style, c.want) {
+			t.Errorf("%s = %q, %q を含むべき", c.name, c.style, c.want)
+		}
+	}
+}
+
+// 飾りの実寸が optionChrome の見積もりを超えていないこと。超えると 1 行に収まらず折り返し、
+// viewport の高さ計算が崩れて先頭のバンドルが消える。
+func TestOptionChrome_飾りの幅を見積もれている(t *testing.T) {
+	th := theme()
+	actual := displayWidth(stripANSI(th.Focused.MultiSelectSelector.String())) +
+		displayWidth(stripANSI(th.Focused.SelectedPrefix.String()))
+	if actual > optionChrome {
+		t.Errorf("飾りの実寸 %d が optionChrome %d を超えている", actual, optionChrome)
+	}
+}
+
+// stripANSI は ESC [ ... m のエスケープを落とす（幅の実測用）。
+func stripANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			for i < len(s) && s[i] != 'm' {
+				i++
+			}
+			i++ // 'm' を飛ばす
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
 func TestTruncateWidth(t *testing.T) {
 	cases := []struct {
 		s    string

@@ -128,6 +128,14 @@ newlines only; it never touches the front.
 
 ## Living with it
 
+### CLI language
+
+Every CLI message is bilingual. The language is picked from the first non-empty of
+`LLMTPL_LANG` > `LC_ALL` > `LC_MESSAGES` > `LANG`: a value starting with `ja` selects Japanese,
+anything else — including nothing set — selects English. `LLMTPL_LANG` overrides the language for
+llmtpl alone (`LLMTPL_LANG=ja llmtpl apply`). Generated files are not affected: the `GENERATED`
+header is fixed to English so it never varies by machine.
+
 ### Archiving
 
 **An existing file is archived before being overwritten.** When llmtpl finds a file without its

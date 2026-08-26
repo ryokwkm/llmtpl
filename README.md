@@ -18,7 +18,7 @@ That one line brings in the instructions, the rules, the script, and the registr
 Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
 you put in a bundle lands at the same relative place in the target, so the same rules distribute
 `AGENTS.md`, `.cursor/`, or `.github/`. The author runs it daily across several repositories with
-eight bundles.
+fourteen bundles.
 
 This README covers getting started. The details of the spec, and the reasoning behind them, are in
 [docs/reference.md](docs/reference.md).
@@ -43,6 +43,12 @@ hand, and missing one breaks things quietly:
 Then do that per repository. It falls apart once you are holding features × repositories in your head.
 
 ## Install
+
+```sh
+brew install ryokwkm/tap/llmtpl
+```
+
+Or download a binary from [Releases](https://github.com/ryokwkm/llmtpl/releases), or with Go:
 
 ```sh
 go install github.com/ryokwkm/llmtpl@latest   # needs Go 1.24+

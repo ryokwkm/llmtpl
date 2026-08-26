@@ -16,7 +16,8 @@ logcheck = true
 この README の例はすべて Claude Code だが、仕組みは特定ツールのレイアウトに依存しない。
 バンドルに置いたものが同じ相対位置へ重なるだけなので、`AGENTS.md` や `.cursor/`・`.github/` にも
 同じ規則で配れる（→「覚える言葉は 2 つ、配られ方は 4 通り」）。
-作者は Claude Code + 複数リポジトリ × 8 バンドルで日常運用している。CLI のメッセージは日本語。
+作者は Claude Code + 複数リポジトリ × 14 バンドルで日常運用している。CLI のメッセージは
+日英対応で、ロケールから自動で決まる（→ [reference](docs/reference.ja.md) の「CLI メッセージの言語」）。
 
 この README は「使い始めるまで」を扱う。仕様の細部と、その仕様になっている理由は
 [docs/reference.ja.md](docs/reference.ja.md) にある。
@@ -41,6 +42,12 @@ logcheck = true
 機能 × リポジトリの掛け算で手に持ち始めたあたりで破綻する。
 
 ## インストール
+
+```sh
+brew install ryokwkm/tap/llmtpl
+```
+
+[Releases](https://github.com/ryokwkm/llmtpl/releases) からバイナリを落としてもよい。Go があるなら:
 
 ```sh
 go install github.com/ryokwkm/llmtpl@latest   # 要 Go 1.24+

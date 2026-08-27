@@ -37,9 +37,11 @@ a position later produces no diff.
 
 **The search covers the given directory and everything under it.** There may be several targets if
 you keep projects inside a config repository; two or more prints a count. Three guards stop it from
-running away: `llm-tpl/`, `partials/`, `.archive/`, `node_modules`, and `vendor` are never looked at;
-**dot-prefixed directories are neither targets nor descended into**; and **a separate repository (any
-directory with a `.git`) is never descended into**.
+running away: `llm-tpl/`, `partials/`, `.archive/`, `node_modules`, `vendor`, `testdata`, and
+`examples` are never looked at; **dot-prefixed directories are neither targets nor descended into**.
+A separate repository (a directory with a `.git`) **is descended into** — the presence of
+`llmtpl.conf` is itself the opt-in, so a repository without one is never dragged in. Running from a
+parent directory of several repositories handles all their targets at once.
 
 The bundle root resolves in this order: `--tpl-home` → `$LLMTPL_HOME` → **`bundle_root` in
 `llmtpl.conf`** → walking up for `llm-tpl/` → `${XDG_CONFIG_HOME:-~/.config}/llmtpl`.

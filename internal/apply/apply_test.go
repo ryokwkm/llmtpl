@@ -403,10 +403,11 @@ func TestDiscoverTargets_自身が該当しても配下も探す(t *testing.T) {
 	}
 }
 
-// 別リポジトリ（.git を持つ）の中へは降りない。$HOME のような広い場所を指したときに
-// 無関係なリポジトリのターゲットまで巻き込むのを防ぐ。
-// worktree / submodule では .git がファイルなので、ディレクトリ判定だけでは足りない。
-func TestDiscoverTargets_別リポジトリへは降りない(t *testing.T) {
+// 別リポジトリ（.git を持つ）の中へも降りて、conf を持つディレクトリを拾う。
+// conf の存在そのものが opt-in なので、リポジトリ境界で止める理由が無い —— 止めると
+// 「複数リポジトリを親ディレクトリからまとめて見る」（対話モードの主用途）が成立しない。
+// worktree / submodule では .git がファイルなので、両方の形を確かめる。
+func TestDiscoverTargets_別リポジトリでもconfがあれば拾う(t *testing.T) {
 	for _, kind := range []string{"dir", "file"} {
 		t.Run(".git が "+kind, func(t *testing.T) {
 			root := t.TempDir()
@@ -417,17 +418,20 @@ func TestDiscoverTargets_別リポジトリへは降りない(t *testing.T) {
 			} else {
 				writeFile(t, filepath.Join(other, ".git"), "gitdir: /elsewhere\n")
 			}
-			// 同じ階層の .git を持たないディレクトリは拾われる（ガードが効きすぎていないこと）
+			// conf の無いリポジトリの**中**も探索し、孫の conf を拾う
+			mkdirAll(t, filepath.Join(root, "repo2", ".git"))
+			writeFile(t, filepath.Join(root, "repo2", "sub", TargetConfName), "")
+			// conf を持たないリポジトリ自身はターゲットにならない
 			writeFile(t, filepath.Join(root, "mine", TargetConfName), "")
 
 			got, err := DiscoverTargets(root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(got) != 1 {
-				t.Fatalf("別リポジトリを除いた 1 件を期待: %+v", got)
+			if len(got) != 3 {
+				t.Fatalf("other-repo / repo2/sub / mine の 3 件を期待: %+v", got)
 			}
-			if !strings.Contains(got[0].Dir, "mine") {
+			if !strings.Contains(got[0].Dir, "mine") && !strings.Contains(got[0].Dir, "other") && !strings.Contains(got[0].Dir, "sub") {
 				t.Errorf("拾ったディレクトリが違う: %+v", got)
 			}
 		})

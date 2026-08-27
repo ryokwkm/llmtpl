@@ -844,7 +844,8 @@ var skipDirs = map[string]bool{
 // なっていた。自身がターゲットでも探索は止めない（1 リポジトリに複数あってよい。
 // 例: <repo>/CLAUDE.local.md.tmpl と <repo>/.claude/ が別ターゲットになる構成）。
 //
-// 暴走は 3 段で止める: skipDirs / ドット始まりへは降りない / **別リポジトリへは降りない**。
+// 暴走は 2 段で止める: skipDirs / ドット始まりへは降りない。別リポジトリ（.git 持ち）の中へは
+// 降りる（conf が opt-in なので巻き込みは起きない。2026-08-27 にガードを撤廃）。
 func DiscoverTargets(start string) ([]Target, error) {
 	var out []Target
 	err := filepath.WalkDir(start, func(path string, d os.DirEntry, err error) error {
@@ -865,15 +866,10 @@ func DiscoverTargets(start string) ([]Target, error) {
 		if path != start && strings.HasPrefix(name, ".") {
 			return filepath.SkipDir
 		}
-		// 別リポジトリは**そのルート自身もターゲットにしない**。$HOME のような広い場所を
-		// 指したときに、無関係なリポジトリまで設定してしまうのを防ぐ（start 自身は常に対象）。
-		// ターゲットがプロジェクトルートになった今、判定より前に弾かないと別リポジトリの
-		// ルートが拾われる。worktree / submodule では .git がファイルなのでファイルも見る。
-		if path != start {
-			if g := filepath.Join(path, ".git"); isDir(g) || isFile(g) {
-				return filepath.SkipDir
-			}
-		}
+		// 別リポジトリ（.git を持つディレクトリ）の中へも降りる。かつてはリポジトリ境界で
+		// 止めていたが、conf の存在そのものが opt-in なので無関係なリポジトリが巻き込まれる
+		// ことはなく、止めると「複数リポジトリを親ディレクトリからまとめて見る」
+		// （対話モードの主用途）が成立しない（2026-08-27 に撤廃）。
 		if isTarget(path) {
 			out = append(out, Target{Dir: path})
 		}

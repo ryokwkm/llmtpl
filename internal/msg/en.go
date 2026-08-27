@@ -79,7 +79,6 @@ var en = Catalog{
 		SkippedUnsupported:     "unsupported type (.md and .json only)",
 		TmplScanFailed:         "cannot scan templates: %w",
 		HomeOrder:              "--tpl-home → the %[1]s environment variable → %[3]s in %[2]s → %[4]s/ found by walking up → ~/.config/llmtpl",
-		ConfHomeConflict:       "%s is specified inconsistently (it cannot resolve to one value in a single run):\n  %s → %s\n  %s → %s",
 		HomeLabelEnv:           "the %s environment variable",
 		HomeLabelConf:          "%[2]s in %[1]s",
 		HomeLabelWalkUp:        "found by walking up",

@@ -109,20 +109,25 @@ func runApply(dirs []string, c *commonFlags, checkOnly bool) error {
 	if checkOnly {
 		c.dryRun = true
 	}
-	targets, root, err := resolveScope(dirs, c)
+	rs, err := resolveScope(dirs, c)
 	if err != nil {
 		return err
 	}
 
 	o := apply.Options{DryRun: c.dryRun}
 	diffs := 0
-	for _, tg := range targets {
-		rep, err := root.Apply(tg, o)
-		if err != nil {
-			return err // 1 つでも失敗したら以降へ進まない（半端な状態を作らない）
+	for _, g := range groupByRoot(rs) {
+		// 解決したルートは常に見せる。conf 由来だと「離れた 1 ファイルがその棚を変える」ので、
+		// 出典まで出さないと事故が静かになる
+		fmt.Printf(msg.M.Cmd.BundleRootLine, g[0].root.Dir, g[0].label)
+		for _, r := range g {
+			rep, err := r.root.Apply(r.tg, o)
+			if err != nil {
+				return err // 1 つでも失敗したら以降へ進まない（半端な状態を作らない）
+			}
+			diffs += rep.Diffs()
+			printReport(r.tg, rep, o.DryRun, c.verbose)
 		}
-		diffs += rep.Diffs()
-		printReport(tg, rep, o.DryRun, c.verbose)
 	}
 	if checkOnly && diffs > 0 {
 		return diffErr{n: diffs}
@@ -137,11 +142,11 @@ func newStatusCmd() *cobra.Command {
 		Short: msg.M.Cmd.StatusShort,
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			targets, root, err := resolveScope(args, c)
+			rs, err := resolveScope(args, c)
 			if err != nil {
 				return err
 			}
-			return printStatus(targets, root)
+			return printStatus(rs)
 		},
 	}
 	c.register(cmd, false)
@@ -159,14 +164,19 @@ func newBundlesCmd() *cobra.Command {
 		Short:   msg.M.Cmd.BundlesShort,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			// apply と同じ経路を通す。ここが別経路だと、bundles が apply とは違うルートの
-			// カタログを出す —— カタログは「conf に書いてよいフラグ名」の一次情報（Validate の
-			// 母集合そのもの）なので、ずれると「表示にあった名前を書いたのに未知のフラグで落ちる」
-			_, root, src, err := resolveRoot(nil, tplHome)
+			// apply と同じ解決経路（rootForDir）を cwd 基準で通す。ここが別経路だと、bundles が
+			// apply とは違うルートのカタログを出す —— カタログは「conf に書いてよいフラグ名」の
+			// 一次情報（Validate の母集合そのもの）なので、ずれると
+			// 「表示にあった名前を書いたのに未知のフラグで落ちる」
+			wd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
-			return printBundles(root, src) // ターゲット 0 件でもカタログは出す
+			root, label, err := rootForDir(tplHome, wd, map[string]apply.Root{})
+			if err != nil {
+				return err
+			}
+			return printBundles(root, label) // ターゲット 0 件でもカタログは出す
 		},
 	}
 	cmd.Flags().StringVar(&tplHome, "tpl-home", "", msg.M.Cmd.FlagTplHome)
@@ -193,15 +203,25 @@ func absDirs(dirs []string) ([]string, error) {
 	return out, nil
 }
 
-// resolveRoot は「ターゲット群 + バンドルルート」を 1 本の経路で揃える。全サブコマンドがこれを通る。
+// resolved は 1 ターゲットと、それが使うバンドルルートの組。
 //
-// 順序は固定: absDirs → DiscoverTargets → ソート → ScanConfHome → FindTplHome → LoadRoot。
-// conf 由来のルート指定を読むにはターゲットが先に要るので、この順以外に組めない。
-// ルートの読み込みはターゲット数に関係なく 1 回（Root はプロセスに 1 つ）。
-func resolveRoot(dirs []string, tplHome string) ([]apply.Target, apply.Root, string, error) {
+// ルートは**ターゲットごとに**解決する（自分の conf の bundle_root → 自分の dir からの親探索 →
+// XDG）。conf の bundle_root はそれを書いたターゲットだけに効くので、ターゲット間の
+// 「食い違い」という概念自体が無い。
+type resolved struct {
+	tg    apply.Target
+	root  apply.Root
+	label string // ルートの出典（表示用）
+}
+
+// resolveRoot は「ターゲット群 + 各自のバンドルルート」を 1 本の経路で揃える。全サブコマンドがこれを通る。
+//
+// 順序は固定: absDirs → DiscoverTargets → ターゲットごとに rootForDir → ルート配下のターゲットを
+// 除外 → (ルート, ターゲット) で整列。同じ棚を指すターゲットが何件あっても LoadRoot は 1 回（キャッシュ）。
+func resolveRoot(dirs []string, tplHome string) ([]resolved, error) {
 	abs, err := absDirs(dirs)
 	if err != nil {
-		return nil, apply.Root{}, "", err
+		return nil, err
 	}
 
 	var targets []apply.Target
@@ -209,7 +229,7 @@ func resolveRoot(dirs []string, tplHome string) ([]apply.Target, apply.Root, str
 	for _, d := range abs {
 		found, err := apply.DiscoverTargets(d)
 		if err != nil {
-			return nil, apply.Root{}, "", err
+			return nil, err
 		}
 		for _, tg := range found {
 			if !seen[tg.Dir] {
@@ -218,64 +238,108 @@ func resolveRoot(dirs []string, tplHome string) ([]apply.Target, apply.Root, str
 			}
 		}
 	}
-	slices.SortFunc(targets, func(a, b apply.Target) int { return strings.Compare(a.Dir, b.Dir) })
 
-	confHome, err := apply.ScanConfHome(targets)
-	if err != nil {
-		return nil, apply.Root{}, "", err
-	}
-	home, src, err := apply.FindTplHome(tplHome, confHome, abs[0])
-	if err != nil {
-		return nil, apply.Root{}, "", err
-	}
-	root, err := apply.LoadRoot(home)
-	if err != nil {
-		return nil, apply.Root{}, "", err
-	}
-
-	// ルートが探索ツリーの内側を非標準名で指していると、その中のバンドルが「*.tmpl を持つ
-	// ディレクトリ」としてターゲットに拾われ、apply 全体が落ちる（skipDirs は文字列 llm-tpl
-	// しか見ない）。引数で名指しされたものは意図的な指定とみなして残す
-	kept := targets[:0]
-	dropped := 0
+	cache := map[string]apply.Root{}
+	rs := make([]resolved, 0, len(targets))
 	for _, tg := range targets {
-		if !slices.Contains(abs, tg.Dir) && apply.Under(root.Dir, tg.Dir) {
+		root, label, err := rootForDir(tplHome, tg.Dir, cache)
+		if err != nil {
+			return nil, err
+		}
+		rs = append(rs, resolved{tg: tg, root: root, label: label})
+	}
+
+	// ルートが探索ツリーの内側にあると、その中の conf 持ちディレクトリがターゲットとして
+	// 拾われて apply 全体が落ちる（skipDirs は文字列 llm-tpl しか見ない）。
+	// 引数で名指しされたものは意図的な指定とみなして残す
+	kept := rs[:0]
+	dropped := 0
+	for _, r := range rs {
+		if !slices.Contains(abs, r.tg.Dir) && underAnyRoot(rs, r.tg.Dir) {
 			dropped++
 			continue
 		}
-		kept = append(kept, tg)
+		kept = append(kept, r)
 	}
-	targets = kept
+	rs = kept
 	if dropped > 0 {
 		fmt.Printf(msg.M.Cmd.DroppedTargets, dropped)
 	}
 
+	// 表示がルートごとに固まるように並べる（単一ルートなら従来どおりターゲット順）
+	slices.SortFunc(rs, func(a, b resolved) int {
+		if c := strings.Compare(a.root.Dir, b.root.Dir); c != 0 {
+			return c
+		}
+		return strings.Compare(a.tg.Dir, b.tg.Dir)
+	})
+	return rs, nil
+}
+
+// underAnyRoot は dir がいずれかの解決済みルートの配下かを返す。
+func underAnyRoot(rs []resolved, dir string) bool {
+	for _, r := range rs {
+		if apply.Under(r.root.Dir, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// rootForDir は dir を起点にバンドルルートを 1 つ解決する（dir の conf → 親探索 → XDG）。
+// cache は LoadRoot の重複を防ぐ（キーは解決済みのルートパス）。
+func rootForDir(tplHome, dir string, cache map[string]apply.Root) (apply.Root, string, error) {
+	confHome, err := apply.ConfHomeOf(dir)
+	if err != nil {
+		return apply.Root{}, "", err
+	}
+	home, src, err := apply.FindTplHome(tplHome, confHome, dir)
+	if err != nil {
+		return apply.Root{}, "", err
+	}
+	root, ok := cache[home]
+	if !ok {
+		if root, err = apply.LoadRoot(home); err != nil {
+			return apply.Root{}, "", err
+		}
+		cache[home] = root
+	}
 	label := src.Label()
 	if src == apply.HomeFromConf {
 		// 出典は「llmtpl.conf の bundle_root」ではなく、実際に書いてある conf のパスまで出す
 		label = fmt.Sprintf(msg.M.Apply.HomeLabelConf, confHome.Src, flags.KeyBundleRoot)
 	}
-	return targets, root, label, nil
+	return root, label, nil
+}
+
+// groupByRoot は整列済みの resolved をルートごとの連続区間に切る。
+func groupByRoot(rs []resolved) [][]resolved {
+	var out [][]resolved
+	for i, r := range rs {
+		if i == 0 || r.root.Dir != rs[i-1].root.Dir {
+			out = append(out, nil)
+		}
+		out[len(out)-1] = append(out[len(out)-1], r)
+	}
+	return out
 }
 
 // resolveScope は resolveRoot にターゲット 0 件の判定と件数表示を足したもの（apply / check / status 用）。
-func resolveScope(dirs []string, c *commonFlags) ([]apply.Target, apply.Root, error) {
-	targets, root, src, err := resolveRoot(dirs, c.tplHome)
+// 「バンドルルート:」の行は呼び出し側がルートごとに出す（groupByRoot）。
+func resolveScope(dirs []string, c *commonFlags) ([]resolved, error) {
+	rs, err := resolveRoot(dirs, c.tplHome)
 	if err != nil {
-		return nil, apply.Root{}, err
+		return nil, err
 	}
-	if len(targets) == 0 {
+	if len(rs) == 0 {
 		abs, _ := absDirs(dirs)
-		return nil, apply.Root{}, fmt.Errorf(msg.M.Cmd.NoTargets, strings.Join(abs, ", "), apply.TargetConfName)
+		return nil, fmt.Errorf(msg.M.Cmd.NoTargets, strings.Join(abs, ", "), apply.TargetConfName)
 	}
 	// 探索が既定で配下まで及ぶので、何件を対象にしたかを必ず見せる（誤爆の可視化）
-	if len(targets) > 1 {
-		fmt.Printf(msg.M.Cmd.TargetCount, len(targets))
+	if len(rs) > 1 {
+		fmt.Printf(msg.M.Cmd.TargetCount, len(rs))
 	}
-	// 解決したルートは常に見せる。conf 由来だと「離れた 1 ファイルが全体を変える」ので、
-	// 出典まで出さないと事故が静かになる
-	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, src)
-	return targets, root, nil
+	return rs, nil
 }
 
 // printReport は 1 ターゲット分の結果を表示する（判断はしない）。
@@ -340,31 +404,34 @@ func printReport(tg apply.Target, rep apply.Report, dryRun, verbose bool) {
 	}
 }
 
-func printStatus(targets []apply.Target, root apply.Root) error {
-	names := root.Names() // バンドルルートの行は resolveScope が出す
-	if len(names) == 0 {
-		fmt.Println(msg.M.Cmd.NoBundles)
-		return nil
-	}
+func printStatus(rs []resolved) error {
+	for _, g := range groupByRoot(rs) {
+		fmt.Printf(msg.M.Cmd.BundleRootLine, g[0].root.Dir, g[0].label)
+		names := g[0].root.Names()
+		if len(names) == 0 {
+			fmt.Println(msg.M.Cmd.NoBundles)
+			continue
+		}
 
-	rows := [][]string{append([]string{msg.M.Cmd.ColTarget}, names...)}
-	for _, tg := range targets {
-		eff, err := root.Flags(tg)
-		if err != nil {
-			return err
-		}
-		row := make([]string, 0, len(names)+1)
-		row = append(row, rel(tg.Dir))
-		for _, n := range names {
-			if eff[n] {
-				row = append(row, "ON")
-			} else {
-				row = append(row, "-")
+		rows := [][]string{append([]string{msg.M.Cmd.ColTarget}, names...)}
+		for _, r := range g {
+			eff, err := r.root.Flags(r.tg)
+			if err != nil {
+				return err
 			}
+			row := make([]string, 0, len(names)+1)
+			row = append(row, rel(r.tg.Dir))
+			for _, n := range names {
+				if eff[n] {
+					row = append(row, "ON")
+				} else {
+					row = append(row, "-")
+				}
+			}
+			rows = append(rows, row)
 		}
-		rows = append(rows, row)
+		printTable(rows)
 	}
-	printTable(rows)
 	return nil
 }
 

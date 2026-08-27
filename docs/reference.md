@@ -42,7 +42,9 @@ running away: `llm-tpl/`, `partials/`, `.archive/`, `node_modules`, and `vendor`
 directory with a `.git`) is never descended into**.
 
 The bundle root resolves in this order: `--tpl-home` → `$LLMTPL_HOME` → **`bundle_root` in
-`llmtpl.conf`** → walking up for `llm-tpl/` → `${XDG_CONFIG_HOME:-~/.config}/llmtpl`. As long as you
+`llmtpl.conf`** → walking up for `llm-tpl/` → `${XDG_CONFIG_HOME:-~/.config}/llmtpl`.
+**Resolution is per target** — each target reads its own conf and walks up from its own directory —
+and `apply` / `check` / `status` print one "bundle root:" line per root. As long as you
 keep `llm-tpl/` next to your projects inside a config repository, only the fourth applies and you
 write nothing.
 
@@ -65,7 +67,8 @@ wiki = true
   (falling through would turn a typo into "generation succeeded against a different bundle root")
 - **It cannot be written in `defaults.conf`.** That file lives inside the bundle root, so the root is
   already resolved by the time it is read
-- Two targets naming **different** values is an error. Any number naming the same value is fine
+- **It affects only the target whose conf names it.** Different targets may name different values;
+  each is composed from its own root (they never conflict within one run)
 - A bundle root directory cannot itself be named `bundle_root` (you could no longer turn on a flag by
   that name in a conf, so `apply` refuses)
 

@@ -79,7 +79,6 @@ var ja = Catalog{
 		SkippedUnsupported:     "未対応の種類（.md / .json のみ）",
 		TmplScanFailed:         "テンプレの探索に失敗: %w",
 		HomeOrder:              "--tpl-home → 環境変数 %s → %s の %s → 親を辿って %s/ → ~/.config/llmtpl",
-		ConfHomeConflict:       "%s の指定が食い違っています（同じ実行で 1 つに定まりません）:\n  %s → %s\n  %s → %s",
 		HomeLabelEnv:           "環境変数 %s",
 		HomeLabelConf:          "%s の %s",
 		HomeLabelWalkUp:        "親探索",

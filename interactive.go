@@ -79,12 +79,16 @@ func interactiveFlow(p prompter) error {
 		}
 	}
 
-	targets, root, src, err := resolveRoot(nil, "")
+	rs, err := resolveRoot(nil, "")
 	if err != nil {
 		return err // ルート未解決なら HomeNotFound が解決順ごと出る（= 状況の表示を兼ねる）
 	}
+	root, label, err := rootOfCwd(rs, dir)
+	if err != nil {
+		return err
+	}
 	// フォームは通常画面でこの行のすぐ下に出るので、選んでいる間も「どの棚か」が見え続ける
-	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, src)
+	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, label)
 
 	tg := apply.Target{Dir: dir}
 	items, err := bundleItems(root, tg)
@@ -127,11 +131,11 @@ func interactiveFlow(p prompter) error {
 	}
 	printReport(tg, rep, false, false)
 
-	// cwd を引いて数える。**len(targets)-1 では足りない** —— conf を今から作る経路では
-	// resolveRoot の時点でファイルがまだ無く、cwd 自身が targets に入っていない
+	// cwd を引いて数える。**len(rs)-1 では足りない** —— conf を今から作る経路では
+	// resolveRoot の時点でファイルがまだ無く、cwd 自身が rs に入っていない
 	others := 0
-	for _, t := range targets {
-		if t.Dir != dir {
+	for _, r := range rs {
+		if r.tg.Dir != dir {
 			others++
 		}
 	}
@@ -139,6 +143,17 @@ func interactiveFlow(p prompter) error {
 		fmt.Printf(msg.M.Interactive.OtherTargetsHint, others)
 	}
 	return nil
+}
+
+// rootOfCwd は cwd の棚を選ぶ。cwd がターゲットなら解決済みを使い、conf をこれから作る
+// 経路ではその場で解決する（新しい conf に bundle_root は書かれないので、作成後と同じ結果になる）。
+func rootOfCwd(rs []resolved, dir string) (apply.Root, string, error) {
+	for _, r := range rs {
+		if r.tg.Dir == dir {
+			return r.root, r.label, nil
+		}
+	}
+	return rootForDir("", dir, map[string]apply.Root{})
 }
 
 // isInteractive は stdin / stdout の両方が端末かを返す。

@@ -182,11 +182,11 @@ func TestFindTplHome_conf由来が存在しなければ親探索へ落ちずエ�
 	}
 }
 
-func TestScanConfHome(t *testing.T) {
-	t.Run("どの conf も指定していなければ意見なし", func(t *testing.T) {
+func TestConfHomeOf(t *testing.T) {
+	t.Run("conf が指定していなければ意見なし", func(t *testing.T) {
 		d := t.TempDir()
 		writeFile(t, filepath.Join(d, TargetConfName), "wiki = true\n")
-		got, err := ScanConfHome([]Target{{Dir: d}})
+		got, err := ConfHomeOf(d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,11 +195,20 @@ func TestScanConfHome(t *testing.T) {
 		}
 	})
 
-	t.Run("1 件だけ指定していればそれを採る", func(t *testing.T) {
-		d1, d2 := t.TempDir(), t.TempDir()
-		writeFile(t, filepath.Join(d1, TargetConfName), "wiki = true\n")
-		writeFile(t, filepath.Join(d2, TargetConfName), "bundle_root = /opt/b\n")
-		got, err := ScanConfHome([]Target{{Dir: d1}, {Dir: d2}})
+	t.Run("conf が無くても意見なし（エラーにしない）", func(t *testing.T) {
+		got, err := ConfHomeOf(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Dir != "" {
+			t.Errorf("意見なしを期待: %+v", got)
+		}
+	})
+
+	t.Run("指定していればそれを採り、出典を持つ", func(t *testing.T) {
+		d := t.TempDir()
+		writeFile(t, filepath.Join(d, TargetConfName), "bundle_root = /opt/b\n")
+		got, err := ConfHomeOf(d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -210,35 +219,6 @@ func TestScanConfHome(t *testing.T) {
 			t.Errorf("出典が不正: %q", got.Src)
 		}
 	})
-
-	t.Run("同じ値なら複数あってもよい", func(t *testing.T) {
-		d1, d2 := t.TempDir(), t.TempDir()
-		writeFile(t, filepath.Join(d1, TargetConfName), "bundle_root = /opt/b\n")
-		writeFile(t, filepath.Join(d2, TargetConfName), "bundle_root = /opt/b/\n") // Clean 後は同じ
-		if _, err := ScanConfHome([]Target{{Dir: d1}, {Dir: d2}}); err != nil {
-			t.Errorf("同値の重複でエラー: %v", err)
-		}
-	})
-
-	t.Run("食い違いはエラー（どちらを勝たせても負けた側が黙って効かなくなる）", func(t *testing.T) {
-		d1, d2 := t.TempDir(), t.TempDir()
-		writeFile(t, filepath.Join(d1, TargetConfName), "bundle_root = /opt/a\n")
-		writeFile(t, filepath.Join(d2, TargetConfName), "bundle_root = /opt/b\n")
-		err := ScanConfHomeErr(t, []Target{{Dir: d1}, {Dir: d2}})
-		if !strings.Contains(err.Error(), "/opt/a") || !strings.Contains(err.Error(), "/opt/b") {
-			t.Errorf("両方のパスがメッセージに無い: %v", err)
-		}
-	})
-}
-
-// ScanConfHomeErr はエラーを期待する呼び出し。
-func ScanConfHomeErr(t *testing.T, targets []Target) error {
-	t.Helper()
-	_, err := ScanConfHome(targets)
-	if err == nil {
-		t.Fatal("エラーを期待したが nil")
-	}
-	return err
 }
 
 // defaults.conf はバンドルルートの中にあるので、そこでルートを指定するのは定義上遅すぎる。

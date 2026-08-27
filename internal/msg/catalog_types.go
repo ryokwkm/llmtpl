@@ -92,7 +92,6 @@ type ApplyMsg struct {
 	SkippedUnsupported     string
 	TmplScanFailed         string // 引数: err
 	HomeOrder              string // 引数: 環境変数名, ターゲット conf 名, 予約キー, バンドルディレクトリ名
-	ConfHomeConflict       string // 引数: キー, 出典 A, 値 A, 出典 B, 値 B
 	HomeLabelEnv           string // 引数: 環境変数名
 	HomeLabelConf          string // 引数: conf の出典, 予約キー
 	HomeLabelWalkUp        string

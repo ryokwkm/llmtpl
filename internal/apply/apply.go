@@ -701,31 +701,21 @@ type ConfHome struct {
 	Src string // "<conf のパス>:<行>"（エラーと表示に使う）
 }
 
-// ScanConfHome は全ターゲットの llmtpl.conf を読み、bundle_root の指定を 1 つに畳む。
+// ConfHomeOf は dir 直下の llmtpl.conf から bundle_root の指定を読む。ゼロ値は「指定なし」。
 //
-// **全ターゲットを見る**のが要点。最初の引数だけを見る案は、リポジトリルートがターゲットで
-// ないとき（ai-settings がそう）に必ず空振りする。先頭ターゲットだけを見る案は、パス順で
-// たまたま先頭に来た 1 件が他の全ターゲットのルートを黙って決めてしまう。
-// 食い違いは解決不能なのでエラーにする（どちらかを勝たせると、負けた側は「書いたのに効かない」）。
-func ScanConfHome(targets []Target) (ConfHome, error) {
-	var out ConfHome
-	for _, t := range targets {
-		path := filepath.Join(t.Dir, TargetConfName)
-		conf, err := flags.ParseConf(path)
-		if err != nil {
-			return ConfHome{}, err
-		}
-		if conf.BundleRoot == "" {
-			continue
-		}
-		cur := ConfHome{Dir: conf.BundleRoot, Src: fmt.Sprintf("%s:%d", path, conf.BundleRootLine)}
-		if out.Dir != "" && out.Dir != cur.Dir {
-			return ConfHome{}, fmt.Errorf(msg.M.Apply.ConfHomeConflict,
-				flags.KeyBundleRoot, out.Src, out.Dir, cur.Src, cur.Dir)
-		}
-		out = cur
+// **効き先はその conf のターゲットだけ**。かつては全ターゲットの conf を突き合わせて 1 つに
+// 畳んでいた（食い違いはエラー）が、ルート解決をターゲットごとに下ろした際に廃止した ——
+// ターゲットが互いに独立なら、離れた conf の 1 行が他のターゲットの棚を変える経路ごと消える。
+func ConfHomeOf(dir string) (ConfHome, error) {
+	path := filepath.Join(dir, TargetConfName)
+	conf, err := flags.ParseConf(path)
+	if err != nil {
+		return ConfHome{}, err
 	}
-	return out, nil
+	if conf.BundleRoot == "" {
+		return ConfHome{}, nil
+	}
+	return ConfHome{Dir: conf.BundleRoot, Src: fmt.Sprintf("%s:%d", path, conf.BundleRootLine)}, nil
 }
 
 // HomeSource は「どの段でバンドルルートが決まったか」。表示に使う。

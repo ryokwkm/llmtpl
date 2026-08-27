@@ -154,7 +154,7 @@ type InteractiveMsg struct {
 	SelectTitle    string
 	DefaultOnNote  string
 	Changes        string
-	TargetHeader   string // 引数: ターゲット表示名
+	TargetTitle    string // ターゲット選択の見出し
 	ChangeReplace  string // 引数: フラグ名, 旧値, 新値
 	ChangeAppend   string // 引数: フラグ名, 値
 	NoChanges      string // 引数: conf 名

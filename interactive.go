@@ -42,8 +42,11 @@ func (canceledErr) Error() string { return msg.M.Interactive.Canceled }
 type prompter struct {
 	// AskCreate は配下にターゲットが 1 つも無いとき、cwd への conf 作成の可否を尋ねる。
 	AskCreate func(confPath string) (bool, error)
-	// AskFlags はターゲットごとの区画で ON にするフラグ名を選ばせる。返り値は groups と添字対応。
-	AskFlags func(groups []targetGroup) ([][]string, error)
+	// AskTarget は編集するターゲットを選ばせる（ターゲットが複数のときだけ呼ばれる）。
+	// 戻りは groups の添字。「もう終わる」は esc（huh.ErrUserAborted）で表す。
+	AskTarget func(groups []targetGroup) (int, error)
+	// AskFlags は 1 ターゲット分の ON にするフラグ名を選ばせる。
+	AskFlags func(g targetGroup) ([]string, error)
 	// AskApply は conf の更新と apply の実行の可否を尋ねる。
 	AskApply func() (bool, error)
 }
@@ -67,9 +70,10 @@ func runInteractive(cmd *cobra.Command) error {
 
 // interactiveFlow は対話モードの本体（尋ね方だけを外から受け取る）。
 //
-// 配下の全ターゲットをターゲットごとの区画で 1 つのフォームに出し、選択の結果を
-// 各ターゲットの conf へ最小差分で書いてから、**表示した全ターゲットへ apply する**
-// （`llmtpl apply` と同義。画面に出したもの＝apply されるもの、で一貫させる）。
+// 2 段方式: ターゲットが 1 つならそのままフラグ選択へ、複数なら
+// 「ターゲットを選ぶ → そのフラグを選ぶ → 確認 → conf 書き換え → apply → 一覧へ戻る」を
+// 終わるまで繰り返す。1 画面に全区画を並べる形は huh と相性が悪くやめた —— 矢印が区画を
+// 跨げず（huh は端でクランプ）、enter が「次の区画へ / 確定」の二重の意味を持つ。
 func interactiveFlow(p prompter) error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -82,8 +86,7 @@ func interactiveFlow(p prompter) error {
 	}
 
 	// 配下にターゲットが 1 つも無いときだけ、cwd への conf 作成を聞く。
-	// 1 件でもあれば作成は挟まず、その全部を出す（親の階層に conf を増やす導線を作らない）
-	creating := false
+	// 1 件でもあれば作成は挟まず、それを出す（親の階層に conf を増やす導線を作らない）
 	if len(rs) == 0 {
 		proceed, err := confirmCreate(p, dir, filepath.Join(dir, apply.TargetConfName))
 		if err != nil {
@@ -94,7 +97,6 @@ func interactiveFlow(p prompter) error {
 			fmt.Printf(msg.M.Interactive.CreateDeclined, apply.TargetConfName)
 			return nil
 		}
-		creating = true
 		root, label, err := rootForDir("", dir, map[string]apply.Root{})
 		if err != nil {
 			return err
@@ -113,49 +115,66 @@ func interactiveFlow(p prompter) error {
 		return nil
 	}
 
-	picked, err := p.AskFlags(groups)
+	// 1 件なら選択は要らない（リポジトリの中で叩く、最頻の形。従来と同じ挙動）
+	if len(groups) == 1 {
+		return editTarget(p, groups[0])
+	}
+
+	for {
+		idx, err := p.AskTarget(groups)
+		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				// 一覧での esc は「終わる」。編集済みの分は適用済みなので中止（130）ではない
+				return nil
+			}
+			return err
+		}
+		if err := editTarget(p, groups[idx]); err != nil {
+			if _, ok := err.(canceledErr); ok {
+				continue // 編集中の esc はそのターゲットの中止 → 一覧へ戻る
+			}
+			return err
+		}
+		// 書き換えの結果（実効値・conf の行の有無）を次の一覧と編集へ反映する
+		if groups, err = buildGroups(rs); err != nil {
+			return err
+		}
+	}
+}
+
+// editTarget は 1 ターゲット分の「フラグを選ぶ → 確認 → conf 書き換え → apply」。
+func editTarget(p prompter, g targetGroup) error {
+	confPath := filepath.Join(g.r.tg.Dir, apply.TargetConfName)
+	confExists := fileExists(confPath)
+	confText, err := readFile(confPath)
+	if err != nil {
+		return err
+	}
+
+	picked, err := p.AskFlags(g)
 	if err != nil {
 		return formErr(err)
 	}
-	plans := make([][]confedit.Change, len(groups))
-	for i, g := range groups {
-		plans[i] = confedit.Plan(
-			desiredOf(g.Items, picked[i]), writtenFlags(g.Items), g.r.root.Defaults, g.r.root.Names())
-	}
+	changes := confedit.Plan(desiredOf(g.Items, picked), writtenFlags(g.Items), g.r.root.Defaults, g.r.root.Names())
 
-	ok, err := confirmApply(p, groups, plans, creating)
+	ok, err := confirmApply(p, changes, confExists)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return canceledErr{}
 	}
-	for i, g := range groups {
-		confPath := filepath.Join(g.r.tg.Dir, apply.TargetConfName)
-		confText, err := readFile(confPath)
-		if err != nil {
-			return err
-		}
-		if err := writeConf(confPath, confText, plans[i], fileExists(confPath)); err != nil {
-			return err
-		}
+	if err := writeConf(confPath, confText, changes, confExists); err != nil {
+		return err
 	}
 
-	// apply は表示した全ターゲットへ。どの棚で合成したかが読めるよう、行はルートごとに出す
-	applied := make([]resolved, len(groups))
-	for i, g := range groups {
-		applied[i] = g.r
+	// どの棚で合成したかがスクロールバックで追えるよう、apply の前にルートの行を出す
+	fmt.Printf(msg.M.Cmd.BundleRootLine, g.r.root.Dir, g.r.label)
+	rep, err := g.r.root.Apply(g.r.tg, apply.Options{})
+	if err != nil {
+		return err
 	}
-	for _, rg := range groupByRoot(applied) {
-		fmt.Printf(msg.M.Cmd.BundleRootLine, rg[0].root.Dir, rg[0].label)
-		for _, r := range rg {
-			rep, err := r.root.Apply(r.tg, apply.Options{})
-			if err != nil {
-				return err
-			}
-			printReport(r.tg, rep, false, false)
-		}
-	}
+	printReport(g.r.tg, rep, false, false)
 	return nil
 }
 
@@ -206,7 +225,8 @@ func huhPrompter() prompter {
 		AskCreate: func(confPath string) (bool, error) {
 			return askConfirm(fmt.Sprintf(msg.M.Interactive.CreateConfirm, rel(confPath)))
 		},
-		AskFlags: askFlags,
+		AskTarget: askTarget,
+		AskFlags:  askFlags,
 		AskApply: func() (bool, error) {
 			return askConfirm(fmt.Sprintf(msg.M.Interactive.ConfirmTitle, apply.TargetConfName))
 		},
@@ -234,6 +254,9 @@ func askConfirm(title string) (bool, error) {
 func keymap() *huh.KeyMap {
 	km := huh.NewDefaultKeyMap()
 	km.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
+	// Select の絞り込み（`/`）も切る。数件のターゲットに要らないうえ、フィルタ中は
+	// huh が esc をフィルタ解除に使うので、生かすと esc が中止に効かない画面ができる
+	km.Select.Filter = key.NewBinding(key.WithDisabled())
 	return km
 }
 
@@ -306,69 +329,102 @@ func bundleItems(root apply.Root, tg apply.Target) ([]item, error) {
 	return out, nil
 }
 
-// askFlags はターゲットごとの区画を持つチェックボックスを出し、選ばれたフラグ名を区画ごとに返す。
+// askTarget は編集するターゲットを 1 つ選ばせる。
+func askTarget(groups []targetGroup) (int, error) {
+	form, idx := targetForm(groups, labelWidth())
+	err := form.Run()
+	return *idx, err
+}
+
+// targetForm はターゲット選択のフォームを組む（走らせない。分けてあるのはテストのため）。
+func targetForm(groups []targetGroup, width int) (*huh.Form, *int) {
+	opts := make([]huh.Option[int], 0, len(groups))
+	for i, g := range groups {
+		opts = append(opts, huh.NewOption(targetLabel(g, width), i))
+	}
+	var idx int
+	// 絞り込みの無効化は keymap 側（下記 keymap 参照）。Select には MultiSelect の
+	// Filterable(false) に相当する API が無く、`Filtering(false)` は「今フィルタ中か」の
+	// 状態設定で別物（しかも filter.Focus() の副作用がある）
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[int]().
+			Title(msg.M.Interactive.TargetTitle).
+			Options(opts...).
+			Value(&idx),
+	)).WithTheme(theme()).WithKeyMap(keymap())
+	return form, &idx
+}
+
+// targetLabel は選択肢 1 行分（ターゲット名 + いま ON のフラグ）。
+func targetLabel(g targetGroup, width int) string {
+	on := make([]string, 0, len(g.Items))
+	for _, it := range g.Items {
+		if it.Effective {
+			on = append(on, it.Name)
+		}
+	}
+	summary := msg.M.Cmd.OnNone
+	if len(on) > 0 {
+		summary = strings.Join(on, ", ")
+	}
+	const sep = " — ON: "
+	room := width - displayWidth(g.Title) - displayWidth(sep)
+	if s := truncateWidth(summary, room); s != "" {
+		return g.Title + sep + s
+	}
+	return g.Title
+}
+
+// askFlags は 1 ターゲット分のチェックボックスを出し、選ばれたフラグ名を返す。
 //
 // **通常画面で出す**（huh の既定のまま）。代替画面（tea.WithAltScreen）は一度入れて外した ——
 // 「先頭のバンドルが消える」への対策のつもりだったが真因は初期選択の渡し方（selectForm 参照）で、
 // 手前に出した行を隠す副作用だけが残ったため。
-func askFlags(groups []targetGroup) ([][]string, error) {
-	form, picked := selectForm(groups, labelWidth())
+func askFlags(g targetGroup) ([]string, error) {
+	form, picked := selectForm(g, labelWidth())
 	err := form.Run()
-	out := make([][]string, len(picked))
-	for i, sel := range picked {
-		out[i] = *sel
-	}
-	return out, err
+	return *picked, err
 }
 
-// selectForm はターゲットごとの区画（MultiSelect）を 1 つのフォームに束ねる（走らせない）。
+// selectForm は 1 ターゲット分のチェックボックスのフォームを組む（走らせない）。
 //
 // **走らせる処理と分けてあるのはテストのため**。フォームは PTY 無しでは Run できないが、
 // `Init` → `WindowSizeMsg` → `View` なら端末なしで描画結果を確かめられる。
 // 「全バンドルが 1 画面に出る」は実機で 3 回落としているので、ここを見張る。
-//
-// 返り値の []*[]string は groups と添字対応の選択結果。
-func selectForm(groups []targetGroup, width int) (*huh.Form, []*[]string) {
-	fields := make([]huh.Field, 0, len(groups))
-	picked := make([]*[]string, 0, len(groups))
-	for _, g := range groups {
-		opts := make([]huh.Option[string], 0, len(g.Items))
-		sel := make([]string, 0, len(g.Items))
-		for _, it := range g.Items {
-			// 🔴 **初期選択を Option.Selected() で渡してはいけない**。huh の `Options()` は
-			// `selectOptions()` を呼び、そこが「最初に選択済みの項目」の**添字をそのまま
-			// viewport の YOffset へ代入する**（field_multiselect.go:139-157）。つまり先頭が
-			// OFF だとその分だけ一覧が上へずれ、**先頭のバンドルが画面から消える**。
-			// 端末の広さとは無関係で、実機で agenttrail が消えた真因がこれ。
-			opts = append(opts, huh.NewOption(optionLabel(it, width), it.Name))
-			if it.Effective {
-				sel = append(sel, it.Name)
-			}
+func selectForm(g targetGroup, width int) (*huh.Form, *[]string) {
+	opts := make([]huh.Option[string], 0, len(g.Items))
+	picked := make([]string, 0, len(g.Items))
+	for _, it := range g.Items {
+		// 🔴 **初期選択を Option.Selected() で渡してはいけない**。huh の `Options()` は
+		// `selectOptions()` を呼び、そこが「最初に選択済みの項目」の**添字をそのまま
+		// viewport の YOffset へ代入する**（field_multiselect.go:139-157）。つまり先頭が
+		// OFF だとその分だけ一覧が上へずれ、**先頭のバンドルが画面から消える**。
+		// 端末の広さとは無関係で、実機で agenttrail が消えた真因がこれ。
+		opts = append(opts, huh.NewOption(optionLabel(it, width), it.Name))
+		if it.Effective {
+			picked = append(picked, it.Name)
 		}
-		value := sel
-		// **初期選択は Value() で渡す**。`Value` → `Accessor` は選択印を立てるだけで
-		// cursor と YOffset に触らないので、一覧は先頭から出る。
-		// ⚠️ **`Options()` より後に呼ぶこと**（先に呼ぶと `Options()` の `selectOptions()` が
-		// 束縛済みの値を拾って、結局 YOffset を動かす）。
-		//
-		// **Height は指定しない**。指定しても YOffset は動かないので効かず、
-		// 未指定なら選択肢の数に自動で合う。
-		//
-		// **Filterable(false)**: 絞り込みは要らず、切ると `/` と esc が空く。
-		// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
-		fields = append(fields, huh.NewMultiSelect[string]().
+	}
+
+	// **初期選択は Value() で渡す**。`Value` → `Accessor` は選択印を立てるだけで
+	// cursor と YOffset に触らないので、一覧は先頭から出る。
+	// ⚠️ **`Options()` より後に呼ぶこと**（先に呼ぶと `Options()` の `selectOptions()` が
+	// 束縛済みの値を拾って、結局 YOffset を動かす）。
+	//
+	// **Height は指定しない**。指定しても YOffset は動かないので効かず、
+	// 未指定なら選択肢の数に自動で合う。
+	//
+	// **Filterable(false)**: 絞り込みは要らず、切ると `/` と esc が空く。
+	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewMultiSelect[string]().
 			Title(g.Title).
 			Description(rootLine(g.r)).
 			Options(opts...).
 			Filterable(false).
-			Value(&value))
-		picked = append(picked, &value)
-	}
-	// キー操作の案内は区画ではなくフォーム全体（Group の Title）に 1 回だけ出す
-	form := huh.NewForm(
-		huh.NewGroup(fields...).Title(msg.M.Interactive.SelectTitle),
-	).WithTheme(theme()).WithKeyMap(keymap())
-	return form, picked
+			Value(&picked),
+	).Title(msg.M.Interactive.SelectTitle)).WithTheme(theme()).WithKeyMap(keymap())
+	return form, &picked
 }
 
 // desiredOf は「選ばれた名前」を全フラグ分の真偽値へ広げる。
@@ -451,39 +507,26 @@ func writtenFlags(items []item) flags.Set {
 	return out
 }
 
-// confirmApply は変更内容をターゲットごとに印字してから、conf の更新と apply の実行を確かめる。
+// confirmApply は変更内容を印字してから、conf の更新と apply の実行を確かめる。
 //
 // 差分は huh の中ではなく **先に stdout へ出す**。フォームは終了時に画面を畳むので、
 // 中に入れると「何を承諾したか」がスクロールバックに残らない。
-func confirmApply(p prompter, groups []targetGroup, plans [][]confedit.Change, creating bool) (bool, error) {
-	total := 0
-	for _, cs := range plans {
-		total += len(cs)
-	}
+func confirmApply(p prompter, changes []confedit.Change, confExists bool) (bool, error) {
 	switch {
-	case total == 0 && !creating:
+	case len(changes) == 0 && confExists:
 		fmt.Printf(msg.M.Interactive.NoChanges, apply.TargetConfName)
-	case total == 0:
+	case len(changes) == 0:
 		// 「作りますか？→ はい」で全部が既定のままだった場合。目印としての conf は作るので、
 		// 「書き換えません」とは言わない（この後に「作成」と出るので矛盾する）
 		fmt.Printf(msg.M.Interactive.NoChangesNew, apply.TargetConfName)
 	default:
 		fmt.Print(msg.M.Interactive.Changes)
-		for i, g := range groups {
-			if len(plans[i]) == 0 {
+		for _, c := range changes {
+			if c.Old == nil {
+				fmt.Printf(msg.M.Interactive.ChangeAppend, c.Name, boolText(c.New))
 				continue
 			}
-			// 区画が 1 つなら見出しは冗長（どのターゲットかは自明）
-			if len(groups) > 1 {
-				fmt.Printf(msg.M.Interactive.TargetHeader, g.Title)
-			}
-			for _, c := range plans[i] {
-				if c.Old == nil {
-					fmt.Printf(msg.M.Interactive.ChangeAppend, c.Name, boolText(c.New))
-					continue
-				}
-				fmt.Printf(msg.M.Interactive.ChangeReplace, c.Name, boolText(*c.Old), boolText(c.New))
-			}
+			fmt.Printf(msg.M.Interactive.ChangeReplace, c.Name, boolText(*c.Old), boolText(c.New))
 		}
 	}
 

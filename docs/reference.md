@@ -135,10 +135,20 @@ newlines only; it never touches the front.
 
 ### Interactive mode
 
-`llmtpl` with no arguments puts **every target** below the current directory into one form, one
-section per target (title + bundle root + checkboxes), then writes each target's `llmtpl.conf` and
-**applies every target it showed** (same meaning as `llmtpl apply`: what you saw is what gets
-applied). Targets with different roots each show their own shelf's flags.
+`llmtpl` with no arguments works in **two stages**. With a single target below the current
+directory it goes straight to the flag checkboxes; with several it loops "pick a target (↑↓ +
+enter) → tick its flags → confirm → rewrite that `llmtpl.conf` and apply that target → back to the
+list" until you are done. Each list row carries a summary of the flags currently ON, and the flag
+form's heading carries that target's bundle root (targets with different roots each show their own
+shelf's flags).
+
+**Esc means something different per stage**: on the target list it means "done" (edits so far are
+already applied, so exit 0); on the flag form or the confirmation it aborts that one target (back
+to the list when you came from it; exit 130 as before when there is only one target).
+
+**A single form with one section per target was tried and abandoned** (`0a4e87d`, replaced by this
+design): huh clamps ↑/↓ at section edges so arrows cannot cross sections, and enter carries the
+double meaning of "next section / confirm".
 
 **It only starts when stdin and stdout are both terminals.** Behind a pipe, a redirect, or in CI it
 prints the help and exits 0, exactly as it did before the mode existed — a form waiting for input
@@ -152,10 +162,10 @@ wrapped would take more screen lines than the list reckons with, pushing the fir
 top. Only the description is shortened — the flag name and the default-on note always stay. Widen
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
-**The list runs on the normal screen**, like any ordinary CLI. Each section carries its bundle
-root in its heading, and the apply output (one root line per root, one report per target) remains in
-the scrollback afterwards. ⚠️ More rows than the terminal holds still makes huh scroll, **with no
-scrollbar**. Press ↑ if the count looks wrong (`llmtpl bundles` prints all of them).
+**The forms run on the normal screen**, like any ordinary CLI. The apply output (the bundle-root
+line plus one report per target) remains in the scrollback afterwards. ⚠️ More bundles than the
+terminal holds still makes huh scroll, **with no scrollbar**. Press ↑ if the count looks wrong
+(`llmtpl bundles` prints all of them).
 
 **Only when there is no `llmtpl.conf` anywhere below** does it say so and ask whether to create one
 in the current directory (if even one exists it simply shows them — there is no path that grows a

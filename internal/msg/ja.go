@@ -137,7 +137,7 @@ var ja = Catalog{
 		SelectTitle:    "有効にするフラグ（space 切替 / enter 確定 / esc 中止）",
 		DefaultOnNote:  "[既定 ON]",
 		Changes:        "\n変更内容:\n",
-		TargetHeader:   "  ▸ %s\n",
+		TargetTitle:    "設定するターゲット（enter 選択 / esc 終了）",
 		ChangeReplace:  "  ~ %s: %s → %s\n",
 		ChangeAppend:   "  + %s = %s（追記）\n",
 		NoChanges:      "\nフラグの変更はありません（%s は書き換えません）。\n",

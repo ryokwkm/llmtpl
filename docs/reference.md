@@ -145,10 +145,9 @@ wrapped would take more screen lines than the list reckons with, pushing the fir
 top. Only the description is shortened — the flag name and the default-on note always stay. Widen
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
-**The list runs in the alternate screen.** Drawn on the normal screen, the lines printed before it
-and the shell prompt eat into the terminal height; the alternate screen gives the form the whole
-window. ⚠️ It also hides whatever was printed before it, so the bundle root is shown again above the
-list, inside the form. Leaving the form brings the normal screen back. ⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
+**The list runs on the normal screen**, like any ordinary CLI. The bundle-root line printed just
+before it stays visible above the list, and everything remains in the scrollback afterwards.
+⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
 the count looks wrong (`llmtpl bundles` prints all of them).
 
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and

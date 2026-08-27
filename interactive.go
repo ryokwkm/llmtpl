@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -43,8 +41,8 @@ func (canceledErr) Error() string { return msg.M.Interactive.Canceled }
 type prompter struct {
 	// AskCreate は conf の無いディレクトリで作成の可否を尋ねる。subTargets は配下のターゲット数。
 	AskCreate func(confPath string, subTargets int) (bool, error)
-	// AskFlags は ON にするフラグ名を選ばせる。header は一覧の上に出す状況説明（バンドルルート）。
-	AskFlags func(items []item, header string) ([]string, error)
+	// AskFlags は ON にするフラグ名を選ばせる。
+	AskFlags func(items []item) ([]string, error)
 	// AskApply は conf の更新と apply の実行の可否を尋ねる。
 	AskApply func() (bool, error)
 }
@@ -85,9 +83,8 @@ func interactiveFlow(p prompter) error {
 	if err != nil {
 		return err // ルート未解決なら HomeNotFound が解決順ごと出る（= 状況の表示を兼ねる）
 	}
-	// 代替画面の外にも出しておく（フォームへ入る前と、戻ってきた後に見える）
-	header := strings.TrimSuffix(fmt.Sprintf(msg.M.Cmd.BundleRootLine, root.Dir, src), "\n")
-	fmt.Println(header)
+	// フォームは通常画面でこの行のすぐ下に出るので、選んでいる間も「どの棚か」が見え続ける
+	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, src)
 
 	tg := apply.Target{Dir: dir}
 	items, err := bundleItems(root, tg)
@@ -105,7 +102,7 @@ func interactiveFlow(p prompter) error {
 		return err
 	}
 
-	picked, err := p.AskFlags(items, header)
+	picked, err := p.AskFlags(items)
 	if err != nil {
 		return formErr(err)
 	}
@@ -281,18 +278,13 @@ func bundleItems(root apply.Root, tg apply.Target) ([]item, error) {
 }
 
 // askFlags はチェックボックスを出し、選ばれたフラグ名を返す。
-func askFlags(items []item, header string) ([]string, error) {
-	form, picked := selectForm(items, labelWidth(), header)
-	err := form.
-		// 🔴 **代替画面で出す**。huh は通常画面へ描くので、フォームの手前に出した行
-		// （バンドルルート等）とシェルのプロンプトが端末の高さを食い、その分だけ一覧が縮む。
-		// 代替画面ならフォームが画面を丸ごと使える。
-		// **WithProgramOptions は既定を置き換える**ので、huh の既定 2 つを明示的に渡し直す。
-		WithProgramOptions(
-			tea.WithOutput(os.Stderr),
-			tea.WithReportFocus(),
-			tea.WithAltScreen(),
-		).Run()
+//
+// **通常画面で出す**（huh の既定のまま）。代替画面（tea.WithAltScreen）は一度入れて外した ——
+// 「先頭のバンドルが消える」への対策のつもりだったが真因は初期選択の渡し方（selectForm 参照）で、
+// 手前に出したバンドルルートの行を隠す副作用だけが残ったため。
+func askFlags(items []item) ([]string, error) {
+	form, picked := selectForm(items, labelWidth())
+	err := form.Run()
 	return *picked, err
 }
 
@@ -301,7 +293,7 @@ func askFlags(items []item, header string) ([]string, error) {
 // **走らせる処理と分けてあるのはテストのため**。フォームは PTY 無しでは Run できないが、
 // `Init` → `WindowSizeMsg` → `View` なら端末なしで描画結果を確かめられる。
 // 「全バンドルが 1 画面に出る」は実機で 3 回落としているので、ここを見張る。
-func selectForm(items []item, width int, header string) (*huh.Form, *[]string) {
+func selectForm(items []item, width int) (*huh.Form, *[]string) {
 	opts := make([]huh.Option[string], 0, len(items))
 	picked := make([]string, 0, len(items))
 	for _, it := range items {
@@ -324,16 +316,11 @@ func selectForm(items []item, width int, header string) (*huh.Form, *[]string) {
 	// **Height は指定しない**。指定しても YOffset は動かないので効かず、
 	// 未指定なら選択肢の数に自動で合う。
 	//
-	// 🔴 **Description にバンドルルートを出す**。代替画面はフォームの手前に出した行を隠すので、
-	// 「どの棚のフラグを選んでいるのか」を**フォームの中に持たせないと見えなくなる**
-	// （2026-08-27 に「バンドルの場所が消えた」と指摘されて発覚）。
-	//
 	// **Filterable(false)**: 14 個程度に絞り込みは要らず、切ると `/` と esc が空く。
 	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title(msg.M.Interactive.SelectTitle).
-			Description(header).
 			Options(opts...).
 			Filterable(false).
 			Value(&picked),

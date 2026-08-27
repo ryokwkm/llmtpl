@@ -147,7 +147,8 @@ the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
 **The list runs in the alternate screen.** Drawn on the normal screen, the lines printed before it
 and the shell prompt eat into the terminal height; the alternate screen gives the form the whole
-window. ⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
+window. ⚠️ It also hides whatever was printed before it, so the bundle root is shown again above the
+list, inside the form. Leaving the form brings the normal screen back. ⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
 the count looks wrong (`llmtpl bundles` prints all of them).
 
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and

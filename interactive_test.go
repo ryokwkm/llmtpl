@@ -175,7 +175,7 @@ func newFlowFixture(t *testing.T, conf string) flowFixture {
 func stubPrompter(picked ...string) prompter {
 	return prompter{
 		AskCreate: func(string, int) (bool, error) { return true, nil },
-		AskFlags:  func([]item) ([]string, error) { return picked, nil },
+		AskFlags:  func([]item, string) ([]string, error) { return picked, nil },
 		AskApply:  func() (bool, error) { return true, nil },
 	}
 }
@@ -229,7 +229,7 @@ func TestInteractiveFlow_選択で中止すればconfを触らない(t *testing.
 	fx := newFlowFixture(t, src)
 
 	p := stubPrompter()
-	p.AskFlags = func([]item) ([]string, error) { return nil, huh.ErrUserAborted }
+	p.AskFlags = func([]item, string) ([]string, error) { return nil, huh.ErrUserAborted }
 
 	err := interactiveFlow(p)
 	if _, ok := err.(canceledErr); !ok {
@@ -266,7 +266,7 @@ func TestInteractiveFlow_confが無ければ作成を尋ねる(t *testing.T) {
 
 		p := stubPrompter()
 		p.AskCreate = func(string, int) (bool, error) { return false, nil }
-		p.AskFlags = func([]item) ([]string, error) {
+		p.AskFlags = func([]item, string) ([]string, error) {
 			t.Error("断ったのに選択画面まで進んでいる")
 			return nil, nil
 		}
@@ -513,6 +513,22 @@ func TestSelectForm_後方が選択済みでも先頭は隠れない(t *testing.
 	}
 }
 
+// 🔴 代替画面はフォームの手前に出した行を隠すので、バンドルルートは**フォームの中**に無いと
+// 見えなくなる（2026-08-27 に「バンドルの場所が消えた」と指摘されて発覚）。
+func TestSelectForm_バンドルルートが一覧の上に出る(t *testing.T) {
+	items := []item{{Name: "wiki", Desc: "説明", Effective: true}}
+	header := "バンドルルート: /path/to/llm-tpl（親探索）"
+
+	view := stripANSI(renderFormWith(t, items, 100, 20, header))
+	if !strings.Contains(view, header) {
+		t.Fatalf("バンドルルートが出ていない\n--- view ---\n%s", view)
+	}
+	// 一覧の「上」であること
+	if strings.Index(view, header) > strings.Index(view, items[0].Name) {
+		t.Errorf("バンドルルートが一覧より下に出ている\n--- view ---\n%s", view)
+	}
+}
+
 // 初期選択が「選ばれた状態」として実際に渡ること（Options → Value の順序が崩れると壊れる）。
 func TestSelectForm_初期選択が渡る(t *testing.T) {
 	items := []item{
@@ -520,7 +536,7 @@ func TestSelectForm_初期選択が渡る(t *testing.T) {
 		{Name: "bbb", Effective: true},
 		{Name: "ccc", Effective: true},
 	}
-	_, picked := selectForm(items, 80)
+	_, picked := selectForm(items, 80, "")
 	want := []string{"bbb", "ccc"}
 	if !slices.Equal(*picked, want) {
 		t.Errorf("初期選択 = %v, want %v", *picked, want)
@@ -530,7 +546,12 @@ func TestSelectForm_初期選択が渡る(t *testing.T) {
 // renderForm は端末なしでフォームを 1 回描く。
 func renderForm(t *testing.T, items []item, width, height int) string {
 	t.Helper()
-	form, _ := selectForm(items, width)
+	return renderFormWith(t, items, width, height, "")
+}
+
+func renderFormWith(t *testing.T, items []item, width, height int, header string) string {
+	t.Helper()
+	form, _ := selectForm(items, width, header)
 	form.Init()
 	form.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return form.View()

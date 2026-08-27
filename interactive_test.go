@@ -173,11 +173,22 @@ func newFlowFixture(t *testing.T, conf string) flowFixture {
 }
 
 // stubPrompter は「そのフラグ集合を選んで、すべて はい と答える」尋ね方。
+// 区画ごとに、picked のうちその区画に存在する名前だけを選ぶ。
 func stubPrompter(picked ...string) prompter {
 	return prompter{
-		AskCreate: func(string, int) (bool, error) { return true, nil },
-		AskFlags:  func([]item) ([]string, error) { return picked, nil },
-		AskApply:  func() (bool, error) { return true, nil },
+		AskCreate: func(string) (bool, error) { return true, nil },
+		AskFlags: func(groups []targetGroup) ([][]string, error) {
+			out := make([][]string, len(groups))
+			for i, g := range groups {
+				for _, it := range g.Items {
+					if slices.Contains(picked, it.Name) {
+						out[i] = append(out[i], it.Name)
+					}
+				}
+			}
+			return out, nil
+		},
+		AskApply: func() (bool, error) { return true, nil },
 	}
 }
 
@@ -230,7 +241,7 @@ func TestInteractiveFlow_選択で中止すればconfを触らない(t *testing.
 	fx := newFlowFixture(t, src)
 
 	p := stubPrompter()
-	p.AskFlags = func([]item) ([]string, error) { return nil, huh.ErrUserAborted }
+	p.AskFlags = func([]targetGroup) ([][]string, error) { return nil, huh.ErrUserAborted }
 
 	err := interactiveFlow(p)
 	if _, ok := err.(canceledErr); !ok {
@@ -247,7 +258,7 @@ func TestInteractiveFlow_confが無ければ作成を尋ねる(t *testing.T) {
 
 		asked := false
 		p := stubPrompter("wiki")
-		p.AskCreate = func(string, int) (bool, error) { asked = true; return true, nil }
+		p.AskCreate = func(string) (bool, error) { asked = true; return true, nil }
 
 		if err := interactiveFlow(p); err != nil {
 			t.Fatalf("interactiveFlow: %v", err)
@@ -266,8 +277,8 @@ func TestInteractiveFlow_confが無ければ作成を尋ねる(t *testing.T) {
 		fx := newFlowFixture(t, "")
 
 		p := stubPrompter()
-		p.AskCreate = func(string, int) (bool, error) { return false, nil }
-		p.AskFlags = func([]item) ([]string, error) {
+		p.AskCreate = func(string) (bool, error) { return false, nil }
+		p.AskFlags = func([]targetGroup) ([][]string, error) {
 			t.Error("断ったのに選択画面まで進んでいる")
 			return nil, nil
 		}
@@ -298,32 +309,39 @@ func TestInteractiveFlow_confが無ければ作成を尋ねる(t *testing.T) {
 
 // 他ターゲットの件数は cwd を引いて数える。len(targets)-1 だと、conf を今から作る経路
 // （cwd がまだ targets に入っていない）で 1 件少なく出る。
-func TestInteractiveFlow_他ターゲットの件数(t *testing.T) {
-	cases := []struct {
-		name string
-		conf string // cwd の llmtpl.conf（"" なら新規作成の経路）
-		want string
-	}{
-		{name: "conf が既にある", conf: "wiki = true\n", want: "2"},
-		{name: "conf をこれから作る", conf: "", want: "2"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fx := newFlowFixture(t, tc.conf)
-			// 配下に 2 件のターゲットを置く
-			writeFile(t, filepath.Join(fx.dir, "a", apply.TargetConfName), "wiki = true\n")
-			writeFile(t, filepath.Join(fx.dir, "b", apply.TargetConfName), "wiki = true\n")
+// 配下の全ターゲットを 1 つのフォームで扱い、それぞれの conf へ書いて全部へ apply する。
+func TestInteractiveFlow_子ターゲットもまとめて書いてapplyする(t *testing.T) {
+	fx := newFlowFixture(t, "wiki = true\n")
+	writeFile(t, filepath.Join(fx.dir, "sub", apply.TargetConfName), "loop = true\n")
+	writeFile(t, filepath.Join(fx.dir, "sub", "CLAUDE.md.tmpl"),
+		"# サブ\n{{- slot \"commit\"}}\n{{- slot \"wiki\"}}\n{{- slot \"loop\"}}\n")
 
-			out := captureStdout(t, func() {
-				if err := interactiveFlow(stubPrompter("commit")); err != nil {
-					t.Fatalf("interactiveFlow: %v", err)
-				}
-			})
-			want := fmt.Sprintf(msg.M.Interactive.OtherTargetsHint, 2)
-			if !strings.Contains(out, strings.TrimSpace(want)) {
-				t.Errorf("他ターゲットの件数が %s 件と出ていない:\n%s", tc.want, out)
-			}
-		})
+	// 両区画とも「commit と loop」を選ぶ（= cwd は wiki を外して loop を足す。sub は現状どおり）
+	out := captureStdout(t, func() {
+		if err := interactiveFlow(stubPrompter("commit", "loop")); err != nil {
+			t.Fatalf("interactiveFlow: %v", err)
+		}
+	})
+
+	if got, want := readFileOrFail(t, fx.confPath), "wiki = false\nloop = true\n"; got != want {
+		t.Errorf("cwd の conf\n got: %q\nwant: %q", got, want)
+	}
+	// sub は選択の結果が現状と同じなので書き換わらない
+	if got, want := readFileOrFail(t, filepath.Join(fx.dir, "sub", apply.TargetConfName)), "loop = true\n"; got != want {
+		t.Errorf("sub の conf\n got: %q\nwant: %q", got, want)
+	}
+	// 両方に apply が走る
+	md := readFileOrFail(t, filepath.Join(fx.dir, "sub", "CLAUDE.md"))
+	if !strings.Contains(md, "## コミット方針") || !strings.Contains(md, "## ループ") {
+		t.Errorf("sub へ apply されていない:\n%s", md)
+	}
+	if !strings.Contains(readFileOrFail(t, filepath.Join(fx.dir, "CLAUDE.md")), "## ループ") {
+		t.Error("cwd へ apply されていない")
+	}
+	// 区画が複数なので、変更内容にはターゲットの見出しが付く（変更があるのは cwd 側）
+	head := strings.TrimSuffix(fmt.Sprintf(msg.M.Interactive.TargetHeader, filepath.Base(fx.dir)), "\n")
+	if !strings.Contains(out, head) {
+		t.Errorf("ターゲットの見出し %q が出ていない:\n%s", head, out)
 	}
 }
 
@@ -484,7 +502,7 @@ func TestSelectForm_全バンドルが1画面に出る(t *testing.T) {
 				if onAt >= 0 && onAt < n {
 					items[onAt].Effective = true
 				}
-				view := renderForm(t, items, 100, n+10)
+				view := renderForm(t, oneGroup(items), 100, n+10)
 
 				for _, it := range items {
 					if !strings.Contains(view, it.Name) {
@@ -508,15 +526,15 @@ func TestSelectForm_後方が選択済みでも先頭は隠れない(t *testing.
 	}
 	items[13].Effective = true // 最後だけ ON = ずれが最大になる
 
-	view := renderForm(t, items, 100, 40) // 高さは十分（高さの問題ではない）
+	view := renderForm(t, oneGroup(items), 100, 40) // 高さは十分（高さの問題ではない）
 	if !strings.Contains(view, items[0].Name) {
 		t.Errorf("先頭が隠れている\n--- view ---\n%s", stripANSI(view))
 	}
 }
 
-// フォームは通常画面で出すので、手前に印字したバンドルルートの行がそのまま
-// 「どの棚のフラグを選んでいるのか」を示す。フローがその行を出すことを見張る。
-func TestInteractiveFlow_バンドルルートを先に印字する(t *testing.T) {
+// バンドルルートは各区画の Description に出し、apply の段でもルートごとに行を出す。
+// フローの標準出力にルートの行が残ることを見張る（スクロールバックで「どの棚か」を追えること）。
+func TestInteractiveFlow_バンドルルートを印字する(t *testing.T) {
 	fx := newFlowFixture(t, "wiki = true\n")
 
 	out := captureStdout(t, func() {
@@ -530,6 +548,34 @@ func TestInteractiveFlow_バンドルルートを先に印字する(t *testing.T
 	}
 }
 
+// 複数ターゲットは区画ごとに「タイトル + バンドルルート + 選択肢」で並ぶ。
+func TestSelectForm_複数ターゲットが区画で出る(t *testing.T) {
+	groups := []targetGroup{
+		{
+			r:     resolved{root: apply.Root{Dir: "/roots/X"}, label: "テスト"},
+			Title: "repo-a",
+			Items: []item{{Name: "flag-a", Desc: "説明A", Effective: true}},
+		},
+		{
+			r:     resolved{root: apply.Root{Dir: "/roots/Y"}, label: "テスト"},
+			Title: "repo-b",
+			Items: []item{{Name: "flag-b", Desc: "説明B"}},
+		},
+	}
+
+	view := stripANSI(renderForm(t, groups, 100, 40))
+	for _, want := range []string{"repo-a", "repo-b", "/roots/X", "/roots/Y", "flag-a", "flag-b"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q が描画されていない\n--- view ---\n%s", want, view)
+		}
+	}
+	// 区画の順序: repo-a のルート → repo-a のフラグ → repo-b
+	if strings.Index(view, "/roots/X") > strings.Index(view, "flag-a") ||
+		strings.Index(view, "flag-a") > strings.Index(view, "repo-b") {
+		t.Errorf("区画の並びが崩れている\n--- view ---\n%s", view)
+	}
+}
+
 // 初期選択が「選ばれた状態」として実際に渡ること（Options → Value の順序が崩れると壊れる）。
 func TestSelectForm_初期選択が渡る(t *testing.T) {
 	items := []item{
@@ -537,17 +583,26 @@ func TestSelectForm_初期選択が渡る(t *testing.T) {
 		{Name: "bbb", Effective: true},
 		{Name: "ccc", Effective: true},
 	}
-	_, picked := selectForm(items, 80)
+	_, picked := selectForm(oneGroup(items), 80)
 	want := []string{"bbb", "ccc"}
-	if !slices.Equal(*picked, want) {
-		t.Errorf("初期選択 = %v, want %v", *picked, want)
+	if !slices.Equal(*picked[0], want) {
+		t.Errorf("初期選択 = %v, want %v", *picked[0], want)
 	}
 }
 
+// oneGroup は items だけの区画を 1 つ組む（フォーム描画テスト用）。
+func oneGroup(items []item) []targetGroup {
+	return []targetGroup{{
+		r:     resolved{root: apply.Root{Dir: "/path/to/llm-tpl"}, label: "テスト"},
+		Title: "target",
+		Items: items,
+	}}
+}
+
 // renderForm は端末なしでフォームを 1 回描く。
-func renderForm(t *testing.T, items []item, width, height int) string {
+func renderForm(t *testing.T, groups []targetGroup, width, height int) string {
 	t.Helper()
-	form, _ := selectForm(items, width)
+	form, _ := selectForm(groups, width)
 	form.Init()
 	form.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return form.View()

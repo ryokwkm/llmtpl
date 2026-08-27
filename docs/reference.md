@@ -133,8 +133,10 @@ newlines only; it never touches the front.
 
 ### Interactive mode
 
-`llmtpl` with no arguments opens a checkbox list of every flag for the current directory, then
-writes `llmtpl.conf` and applies.
+`llmtpl` with no arguments puts **every target** below the current directory into one form, one
+section per target (title + bundle root + checkboxes), then writes each target's `llmtpl.conf` and
+**applies every target it showed** (same meaning as `llmtpl apply`: what you saw is what gets
+applied). Targets with different roots each show their own shelf's flags.
 
 **It only starts when stdin and stdout are both terminals.** Behind a pipe, a redirect, or in CI it
 prints the help and exits 0, exactly as it did before the mode existed — a form waiting for input
@@ -148,20 +150,16 @@ wrapped would take more screen lines than the list reckons with, pushing the fir
 top. Only the description is shortened — the flag name and the default-on note always stay. Widen
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
-**The list runs on the normal screen**, like any ordinary CLI. The bundle-root line printed just
-before it stays visible above the list, and everything remains in the scrollback afterwards.
-⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
-the count looks wrong (`llmtpl bundles` prints all of them).
+**The list runs on the normal screen**, like any ordinary CLI. Each section carries its bundle
+root in its heading, and the apply output (one root line per root, one report per target) remains in
+the scrollback afterwards. ⚠️ More rows than the terminal holds still makes huh scroll, **with no
+scrollbar**. Press ↑ if the count looks wrong (`llmtpl bundles` prints all of them).
 
-**Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and
-would regenerate sibling targets you did not just edit; the interactive mode edits one conf, so it
-applies one target and tells you how many others exist.
-
-**If the directory has no `llmtpl.conf`**, it says so and asks whether to create one. It counts the
-targets below first and warns when there are any — creating a conf at, say, the root of a config
-repository turns that root into a target too. Nothing is written until the final confirmation, so
-aborting midway leaves no file behind. Answering yes always produces the file even when every flag
-stays at its default, because the presence of `llmtpl.conf` is what makes a directory a target.
+**Only when there is no `llmtpl.conf` anywhere below** does it say so and ask whether to create one
+in the current directory (if even one exists it simply shows them — there is no path that grows a
+conf at a parent level). Nothing is written until the final confirmation, so aborting midway leaves
+no file behind. Answering yes always produces the file even when every flag stays at its default,
+because the presence of `llmtpl.conf` is what makes a directory a target.
 
 The conf is edited in place, never regenerated, under four rules:
 

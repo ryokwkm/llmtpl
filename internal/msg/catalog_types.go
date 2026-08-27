@@ -148,22 +148,21 @@ type ConfEditMsg struct {
 
 // InteractiveMsg は引数なし実行の対話モードの文言。
 type InteractiveMsg struct {
-	NoConfHere       string // 引数: ディレクトリ, conf 名
-	SubTargetsWarn   string // 引数: 件数
-	CreateConfirm    string // 引数: conf パス
-	CreateDeclined   string // 引数: conf 名
-	SelectTitle      string
-	DefaultOnNote    string
-	Changes          string
-	ChangeReplace    string // 引数: フラグ名, 旧値, 新値
-	ChangeAppend     string // 引数: フラグ名, 値
-	NoChanges        string // 引数: conf 名
-	NoChangesNew     string // 引数: conf 名
-	ConfirmTitle     string // 引数: conf 名
-	Affirmative      string
-	Negative         string
-	WroteConf        string // 引数: conf の表示パス
-	CreatedConf      string // 引数: conf の表示パス
-	Canceled         string
-	OtherTargetsHint string // 引数: 件数
+	NoConfHere     string // 引数: ディレクトリ, conf 名
+	CreateConfirm  string // 引数: conf パス
+	CreateDeclined string // 引数: conf 名
+	SelectTitle    string
+	DefaultOnNote  string
+	Changes        string
+	TargetHeader   string // 引数: ターゲット表示名
+	ChangeReplace  string // 引数: フラグ名, 旧値, 新値
+	ChangeAppend   string // 引数: フラグ名, 値
+	NoChanges      string // 引数: conf 名
+	NoChangesNew   string // 引数: conf 名
+	ConfirmTitle   string // 引数: conf 名
+	Affirmative    string
+	Negative       string
+	WroteConf      string // 引数: conf の表示パス
+	CreatedConf    string // 引数: conf の表示パス
+	Canceled       string
 }

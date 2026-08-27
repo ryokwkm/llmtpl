@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
@@ -39,12 +40,19 @@ func (canceledErr) Error() string { return msg.M.Interactive.Canceled }
 // 要求するので、実装の中に埋めると「conf をどう書き換えて何を apply したか」を自動で
 // 確かめる手段がまるごと無くなる（この 3 つを差し替えれば、残り全部が普通の関数になる）。
 type prompter struct {
-	// AskCreate は conf の無いディレクトリで作成の可否を尋ねる。subTargets は配下のターゲット数。
-	AskCreate func(confPath string, subTargets int) (bool, error)
-	// AskFlags は ON にするフラグ名を選ばせる。
-	AskFlags func(items []item) ([]string, error)
+	// AskCreate は配下にターゲットが 1 つも無いとき、cwd への conf 作成の可否を尋ねる。
+	AskCreate func(confPath string) (bool, error)
+	// AskFlags はターゲットごとの区画で ON にするフラグ名を選ばせる。返り値は groups と添字対応。
+	AskFlags func(groups []targetGroup) ([][]string, error)
 	// AskApply は conf の更新と apply の実行の可否を尋ねる。
 	AskApply func() (bool, error)
+}
+
+// targetGroup はフォームの 1 区画（ターゲット 1 つ分）。
+type targetGroup struct {
+	r     resolved
+	Title string // 表示名（cwd からの相対）
+	Items []item
 }
 
 // runInteractive は引数なし実行の入口。TTY でなければ従来どおり help を出す。
@@ -58,17 +66,26 @@ func runInteractive(cmd *cobra.Command) error {
 }
 
 // interactiveFlow は対話モードの本体（尋ね方だけを外から受け取る）。
+//
+// 配下の全ターゲットをターゲットごとの区画で 1 つのフォームに出し、選択の結果を
+// 各ターゲットの conf へ最小差分で書いてから、**表示した全ターゲットへ apply する**
+// （`llmtpl apply` と同義。画面に出したもの＝apply されるもの、で一貫させる）。
 func interactiveFlow(p prompter) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	confPath := filepath.Join(dir, apply.TargetConfName)
-	confExists := fileExists(confPath)
 
-	// conf が無い場所は「ターゲットではない」。作れば対話を続けられるので、状況を見せて聞く
-	if !confExists {
-		proceed, err := confirmCreate(p, dir, confPath)
+	rs, err := resolveRoot(nil, "")
+	if err != nil {
+		return err // ルート未解決なら HomeNotFound が解決順ごと出る（= 状況の表示を兼ねる）
+	}
+
+	// 配下にターゲットが 1 つも無いときだけ、cwd への conf 作成を聞く。
+	// 1 件でもあれば作成は挟まず、その全部を出す（親の階層に conf を増やす導線を作らない）
+	creating := false
+	if len(rs) == 0 {
+		proceed, err := confirmCreate(p, dir, filepath.Join(dir, apply.TargetConfName))
 		if err != nil {
 			return err
 		}
@@ -77,83 +94,90 @@ func interactiveFlow(p prompter) error {
 			fmt.Printf(msg.M.Interactive.CreateDeclined, apply.TargetConfName)
 			return nil
 		}
+		creating = true
+		root, label, err := rootForDir("", dir, map[string]apply.Root{})
+		if err != nil {
+			return err
+		}
+		rs = []resolved{{tg: apply.Target{Dir: dir}, root: root, label: label}}
 	}
 
-	rs, err := resolveRoot(nil, "")
-	if err != nil {
-		return err // ルート未解決なら HomeNotFound が解決順ごと出る（= 状況の表示を兼ねる）
-	}
-	root, label, err := rootOfCwd(rs, dir)
+	groups, err := buildGroups(rs)
 	if err != nil {
 		return err
 	}
-	// フォームは通常画面でこの行のすぐ下に出るので、選んでいる間も「どの棚か」が見え続ける
-	fmt.Printf(msg.M.Cmd.BundleRootLine, root.Dir, label)
-
-	tg := apply.Target{Dir: dir}
-	items, err := bundleItems(root, tg)
-	if err != nil {
-		return err
-	}
-	// バンドルが 1 つも無ければ選ばせるものが無い。空のフォームは操作できないので、
-	// 状況だけ伝えて終える（ルートは解決できているので、上の行に場所は出ている）
-	if len(items) == 0 {
+	// どの棚にもバンドルが無ければ選ばせるものが無い。空のフォームは操作できないので、
+	// 状況だけ伝えて終える
+	if len(groups) == 0 {
 		fmt.Println(msg.M.Cmd.NoBundles)
 		return nil
 	}
-	confText, err := readFile(confPath)
-	if err != nil {
-		return err
-	}
 
-	picked, err := p.AskFlags(items)
+	picked, err := p.AskFlags(groups)
 	if err != nil {
 		return formErr(err)
 	}
-	changes := confedit.Plan(desiredOf(items, picked), writtenFlags(items), root.Defaults, root.Names())
+	plans := make([][]confedit.Change, len(groups))
+	for i, g := range groups {
+		plans[i] = confedit.Plan(
+			desiredOf(g.Items, picked[i]), writtenFlags(g.Items), g.r.root.Defaults, g.r.root.Names())
+	}
 
-	ok, err := confirmApply(p, changes, confExists)
+	ok, err := confirmApply(p, groups, plans, creating)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return canceledErr{}
 	}
-	if err := writeConf(confPath, confText, changes, confExists); err != nil {
-		return err
-	}
-
-	// **apply は cwd の 1 ターゲットだけに絞る**。runApply / resolveScope を通すと
-	// DiscoverTargets が配下へ再帰し、いま編集していない子ターゲットまで再生成してしまう
-	rep, err := root.Apply(tg, apply.Options{})
-	if err != nil {
-		return err
-	}
-	printReport(tg, rep, false, false)
-
-	// cwd を引いて数える。**len(rs)-1 では足りない** —— conf を今から作る経路では
-	// resolveRoot の時点でファイルがまだ無く、cwd 自身が rs に入っていない
-	others := 0
-	for _, r := range rs {
-		if r.tg.Dir != dir {
-			others++
+	for i, g := range groups {
+		confPath := filepath.Join(g.r.tg.Dir, apply.TargetConfName)
+		confText, err := readFile(confPath)
+		if err != nil {
+			return err
+		}
+		if err := writeConf(confPath, confText, plans[i], fileExists(confPath)); err != nil {
+			return err
 		}
 	}
-	if others > 0 {
-		fmt.Printf(msg.M.Interactive.OtherTargetsHint, others)
+
+	// apply は表示した全ターゲットへ。どの棚で合成したかが読めるよう、行はルートごとに出す
+	applied := make([]resolved, len(groups))
+	for i, g := range groups {
+		applied[i] = g.r
+	}
+	for _, rg := range groupByRoot(applied) {
+		fmt.Printf(msg.M.Cmd.BundleRootLine, rg[0].root.Dir, rg[0].label)
+		for _, r := range rg {
+			rep, err := r.root.Apply(r.tg, apply.Options{})
+			if err != nil {
+				return err
+			}
+			printReport(r.tg, rep, false, false)
+		}
 	}
 	return nil
 }
 
-// rootOfCwd は cwd の棚を選ぶ。cwd がターゲットなら解決済みを使い、conf をこれから作る
-// 経路ではその場で解決する（新しい conf に bundle_root は書かれないので、作成後と同じ結果になる）。
-func rootOfCwd(rs []resolved, dir string) (apply.Root, string, error) {
+// buildGroups は各ターゲットをフォームの区画へ組み立てる（バンドルの無い棚は区画ごと出さない）。
+func buildGroups(rs []resolved) ([]targetGroup, error) {
+	out := make([]targetGroup, 0, len(rs))
 	for _, r := range rs {
-		if r.tg.Dir == dir {
-			return r.root, r.label, nil
+		items, err := bundleItems(r.root, r.tg)
+		if err != nil {
+			return nil, err
 		}
+		if len(items) == 0 {
+			continue
+		}
+		out = append(out, targetGroup{r: r, Title: rel(r.tg.Dir), Items: items})
 	}
-	return rootForDir("", dir, map[string]apply.Root{})
+	return out, nil
+}
+
+// rootLine は区画の見出しに添えるバンドルルートの行（末尾の改行なし）。
+func rootLine(r resolved) string {
+	return strings.TrimSuffix(fmt.Sprintf(msg.M.Cmd.BundleRootLine, r.root.Dir, r.label), "\n")
 }
 
 // isInteractive は stdin / stdout の両方が端末かを返す。
@@ -179,12 +203,7 @@ func labelWidth() int {
 // huhPrompter は実際の端末で使う尋ね方（huh のフォーム）。
 func huhPrompter() prompter {
 	return prompter{
-		AskCreate: func(confPath string, subTargets int) (bool, error) {
-			// ここに conf を作ると、この階層自体がターゲットになる。配下に既にターゲットがある
-			// （＝ 設定リポジトリのルートのような場所）なら、まず意図を疑うべきなので見せる
-			if subTargets > 0 {
-				fmt.Printf(msg.M.Interactive.SubTargetsWarn, subTargets)
-			}
+		AskCreate: func(confPath string) (bool, error) {
 			return askConfirm(fmt.Sprintf(msg.M.Interactive.CreateConfirm, rel(confPath)))
 		},
 		AskFlags: askFlags,
@@ -232,18 +251,13 @@ func theme() *huh.Theme {
 	return t
 }
 
-// confirmCreate は conf の無いディレクトリで、作ってよいかを確かめる。
+// confirmCreate は配下にターゲットが無いとき、cwd に conf を作ってよいかを確かめる。
 //
 // **ここではまだ作らない**（この後の選択で中止されるとゴミが残る）。承諾だけを取り、
 // 書き込みは最終確認の後の writeConf が一手で行う。
 func confirmCreate(p prompter, dir, confPath string) (bool, error) {
 	fmt.Printf(msg.M.Interactive.NoConfHere, rel(dir), apply.TargetConfName)
-
-	sub := 0
-	if found, err := apply.DiscoverTargets(dir); err == nil {
-		sub = len(found)
-	}
-	ok, err := p.AskCreate(confPath, sub)
+	ok, err := p.AskCreate(confPath)
 	if err != nil {
 		return false, formErr(err)
 	}
@@ -292,55 +306,69 @@ func bundleItems(root apply.Root, tg apply.Target) ([]item, error) {
 	return out, nil
 }
 
-// askFlags はチェックボックスを出し、選ばれたフラグ名を返す。
+// askFlags はターゲットごとの区画を持つチェックボックスを出し、選ばれたフラグ名を区画ごとに返す。
 //
 // **通常画面で出す**（huh の既定のまま）。代替画面（tea.WithAltScreen）は一度入れて外した ——
 // 「先頭のバンドルが消える」への対策のつもりだったが真因は初期選択の渡し方（selectForm 参照）で、
-// 手前に出したバンドルルートの行を隠す副作用だけが残ったため。
-func askFlags(items []item) ([]string, error) {
-	form, picked := selectForm(items, labelWidth())
+// 手前に出した行を隠す副作用だけが残ったため。
+func askFlags(groups []targetGroup) ([][]string, error) {
+	form, picked := selectForm(groups, labelWidth())
 	err := form.Run()
-	return *picked, err
+	out := make([][]string, len(picked))
+	for i, sel := range picked {
+		out[i] = *sel
+	}
+	return out, err
 }
 
-// selectForm はチェックボックスのフォームを組む（走らせない）。
+// selectForm はターゲットごとの区画（MultiSelect）を 1 つのフォームに束ねる（走らせない）。
 //
 // **走らせる処理と分けてあるのはテストのため**。フォームは PTY 無しでは Run できないが、
 // `Init` → `WindowSizeMsg` → `View` なら端末なしで描画結果を確かめられる。
 // 「全バンドルが 1 画面に出る」は実機で 3 回落としているので、ここを見張る。
-func selectForm(items []item, width int) (*huh.Form, *[]string) {
-	opts := make([]huh.Option[string], 0, len(items))
-	picked := make([]string, 0, len(items))
-	for _, it := range items {
-		// 🔴 **初期選択を Option.Selected() で渡してはいけない**。huh の `Options()` は
-		// `selectOptions()` を呼び、そこが「最初に選択済みの項目」の**添字をそのまま
-		// viewport の YOffset へ代入する**（field_multiselect.go:139-157）。つまり先頭が
-		// OFF だとその分だけ一覧が上へずれ、**先頭のバンドルが画面から消える**。
-		// 端末の広さとは無関係で、実機で agenttrail が消えた真因がこれ。
-		opts = append(opts, huh.NewOption(optionLabel(it, width), it.Name))
-		if it.Effective {
-			picked = append(picked, it.Name)
+//
+// 返り値の []*[]string は groups と添字対応の選択結果。
+func selectForm(groups []targetGroup, width int) (*huh.Form, []*[]string) {
+	fields := make([]huh.Field, 0, len(groups))
+	picked := make([]*[]string, 0, len(groups))
+	for _, g := range groups {
+		opts := make([]huh.Option[string], 0, len(g.Items))
+		sel := make([]string, 0, len(g.Items))
+		for _, it := range g.Items {
+			// 🔴 **初期選択を Option.Selected() で渡してはいけない**。huh の `Options()` は
+			// `selectOptions()` を呼び、そこが「最初に選択済みの項目」の**添字をそのまま
+			// viewport の YOffset へ代入する**（field_multiselect.go:139-157）。つまり先頭が
+			// OFF だとその分だけ一覧が上へずれ、**先頭のバンドルが画面から消える**。
+			// 端末の広さとは無関係で、実機で agenttrail が消えた真因がこれ。
+			opts = append(opts, huh.NewOption(optionLabel(it, width), it.Name))
+			if it.Effective {
+				sel = append(sel, it.Name)
+			}
 		}
-	}
-
-	// **初期選択は Value() で渡す**。`Value` → `Accessor` は選択印を立てるだけで
-	// cursor と YOffset に触らないので、一覧は先頭から出る。
-	// ⚠️ **`Options()` より後に呼ぶこと**（先に呼ぶと `Options()` の `selectOptions()` が
-	// 束縛済みの値を拾って、結局 YOffset を動かす）。
-	//
-	// **Height は指定しない**。指定しても YOffset は動かないので効かず、
-	// 未指定なら選択肢の数に自動で合う。
-	//
-	// **Filterable(false)**: 14 個程度に絞り込みは要らず、切ると `/` と esc が空く。
-	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewMultiSelect[string]().
-			Title(msg.M.Interactive.SelectTitle).
+		value := sel
+		// **初期選択は Value() で渡す**。`Value` → `Accessor` は選択印を立てるだけで
+		// cursor と YOffset に触らないので、一覧は先頭から出る。
+		// ⚠️ **`Options()` より後に呼ぶこと**（先に呼ぶと `Options()` の `selectOptions()` が
+		// 束縛済みの値を拾って、結局 YOffset を動かす）。
+		//
+		// **Height は指定しない**。指定しても YOffset は動かないので効かず、
+		// 未指定なら選択肢の数に自動で合う。
+		//
+		// **Filterable(false)**: 絞り込みは要らず、切ると `/` と esc が空く。
+		// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
+		fields = append(fields, huh.NewMultiSelect[string]().
+			Title(g.Title).
+			Description(rootLine(g.r)).
 			Options(opts...).
 			Filterable(false).
-			Value(&picked),
-	)).WithTheme(theme()).WithKeyMap(keymap())
-	return form, &picked
+			Value(&value))
+		picked = append(picked, &value)
+	}
+	// キー操作の案内は区画ではなくフォーム全体（Group の Title）に 1 回だけ出す
+	form := huh.NewForm(
+		huh.NewGroup(fields...).Title(msg.M.Interactive.SelectTitle),
+	).WithTheme(theme()).WithKeyMap(keymap())
+	return form, picked
 }
 
 // desiredOf は「選ばれた名前」を全フラグ分の真偽値へ広げる。
@@ -423,26 +451,39 @@ func writtenFlags(items []item) flags.Set {
 	return out
 }
 
-// confirmApply は変更内容を印字してから、conf の更新と apply の実行を確かめる。
+// confirmApply は変更内容をターゲットごとに印字してから、conf の更新と apply の実行を確かめる。
 //
 // 差分は huh の中ではなく **先に stdout へ出す**。フォームは終了時に画面を畳むので、
 // 中に入れると「何を承諾したか」がスクロールバックに残らない。
-func confirmApply(p prompter, changes []confedit.Change, confExists bool) (bool, error) {
+func confirmApply(p prompter, groups []targetGroup, plans [][]confedit.Change, creating bool) (bool, error) {
+	total := 0
+	for _, cs := range plans {
+		total += len(cs)
+	}
 	switch {
-	case len(changes) == 0 && confExists:
+	case total == 0 && !creating:
 		fmt.Printf(msg.M.Interactive.NoChanges, apply.TargetConfName)
-	case len(changes) == 0:
+	case total == 0:
 		// 「作りますか？→ はい」で全部が既定のままだった場合。目印としての conf は作るので、
 		// 「書き換えません」とは言わない（この後に「作成」と出るので矛盾する）
 		fmt.Printf(msg.M.Interactive.NoChangesNew, apply.TargetConfName)
 	default:
 		fmt.Print(msg.M.Interactive.Changes)
-		for _, c := range changes {
-			if c.Old == nil {
-				fmt.Printf(msg.M.Interactive.ChangeAppend, c.Name, boolText(c.New))
+		for i, g := range groups {
+			if len(plans[i]) == 0 {
 				continue
 			}
-			fmt.Printf(msg.M.Interactive.ChangeReplace, c.Name, boolText(*c.Old), boolText(c.New))
+			// 区画が 1 つなら見出しは冗長（どのターゲットかは自明）
+			if len(groups) > 1 {
+				fmt.Printf(msg.M.Interactive.TargetHeader, g.Title)
+			}
+			for _, c := range plans[i] {
+				if c.Old == nil {
+					fmt.Printf(msg.M.Interactive.ChangeAppend, c.Name, boolText(c.New))
+					continue
+				}
+				fmt.Printf(msg.M.Interactive.ChangeReplace, c.Name, boolText(*c.Old), boolText(c.New))
+			}
 		}
 	}
 

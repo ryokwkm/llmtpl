@@ -146,9 +146,8 @@ top. Only the description is shortened — the flag name and the default-on note
 the terminal to read more of it, or run `llmtpl bundles` for the full text.
 
 **The list runs in the alternate screen.** Drawn on the normal screen, the lines printed before it
-and the shell prompt eat into the terminal height, and **the first entries get pushed out of view**.
-The alternate screen gives the form the whole window, so earlier output cannot cost it any rows.
-⚠️ Even then, more bundles than terminal rows makes huh scroll, **with no scrollbar**. Press ↑ if
+and the shell prompt eat into the terminal height; the alternate screen gives the form the whole
+window. ⚠️ More bundles than terminal rows still makes huh scroll, **with no scrollbar**. Press ↑ if
 the count looks wrong (`llmtpl bundles` prints all of them).
 
 **Apply covers only the current directory**, not the tree below it. `llmtpl apply` walks down and

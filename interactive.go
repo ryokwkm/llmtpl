@@ -273,38 +273,60 @@ func bundleItems(root apply.Root, tg apply.Target) ([]item, error) {
 
 // askFlags はチェックボックスを出し、選ばれたフラグ名を返す。
 func askFlags(items []item) ([]string, error) {
-	w := labelWidth()
-	opts := make([]huh.Option[string], 0, len(items))
-	for _, it := range items {
-		opts = append(opts, huh.NewOption(optionLabel(it, w), it.Name).Selected(it.Effective))
-	}
-
-	// Height は指定しない。未設定なら huh が選択肢の数に合わせて全部を 1 画面へ収める
-	// （固定値を渡すと title/description の分を引いた上で下限に丸められ、狭い端末で崩れる）。
-	//
-	// **Description も置かない**。huh が最下部に出す help と内容が重なるうえ、1 行ぶん縦に伸びる。
-	//
-	// **Filterable(false)**: 14 個程度に絞り込みは要らず、切ると `/` と esc が空く。
-	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
-	var picked []string
-	err := huh.NewForm(huh.NewGroup(
-		huh.NewMultiSelect[string]().
-			Title(msg.M.Interactive.SelectTitle).
-			Options(opts...).
-			Filterable(false).
-			Value(&picked),
-	)).WithTheme(theme()).WithKeyMap(keymap()).
+	form, picked := selectForm(items, labelWidth())
+	err := form.
 		// 🔴 **代替画面で出す**。huh は通常画面へ描くので、フォームの手前に出した行
-		// （バンドルルート等）とシェルのプロンプトが端末の高さを食い、その分だけ一覧の先頭が
-		// 押し出される（2026-08-26 に agenttrail が消える形で 2 回踏んだ）。代替画面なら
-		// フォームが画面を丸ごと使えるので、手前の出力に高さを削られない。
+		// （バンドルルート等）とシェルのプロンプトが端末の高さを食い、その分だけ一覧が縮む。
+		// 代替画面ならフォームが画面を丸ごと使える。
 		// **WithProgramOptions は既定を置き換える**ので、huh の既定 2 つを明示的に渡し直す。
 		WithProgramOptions(
 			tea.WithOutput(os.Stderr),
 			tea.WithReportFocus(),
 			tea.WithAltScreen(),
 		).Run()
-	return picked, err
+	return *picked, err
+}
+
+// selectForm はチェックボックスのフォームを組む（走らせない）。
+//
+// **走らせる処理と分けてあるのはテストのため**。フォームは PTY 無しでは Run できないが、
+// `Init` → `WindowSizeMsg` → `View` なら端末なしで描画結果を確かめられる。
+// 「全バンドルが 1 画面に出る」は実機で 3 回落としているので、ここを見張る。
+func selectForm(items []item, width int) (*huh.Form, *[]string) {
+	opts := make([]huh.Option[string], 0, len(items))
+	picked := make([]string, 0, len(items))
+	for _, it := range items {
+		// 🔴 **初期選択を Option.Selected() で渡してはいけない**。huh の `Options()` は
+		// `selectOptions()` を呼び、そこが「最初に選択済みの項目」の**添字をそのまま
+		// viewport の YOffset へ代入する**（field_multiselect.go:139-157）。つまり先頭が
+		// OFF だとその分だけ一覧が上へずれ、**先頭のバンドルが画面から消える**。
+		// 端末の広さとは無関係で、実機で agenttrail が消えた真因がこれ。
+		opts = append(opts, huh.NewOption(optionLabel(it, width), it.Name))
+		if it.Effective {
+			picked = append(picked, it.Name)
+		}
+	}
+
+	// **初期選択は Value() で渡す**。`Value` → `Accessor` は選択印を立てるだけで
+	// cursor と YOffset に触らないので、一覧は先頭から出る。
+	// ⚠️ **`Options()` より後に呼ぶこと**（先に呼ぶと `Options()` の `selectOptions()` が
+	// 束縛済みの値を拾って、結局 YOffset を動かす）。
+	//
+	// **Height は指定しない**。指定しても YOffset は動かないので効かず、
+	// 未指定なら選択肢の数に自動で合う。
+	//
+	// **Description も置かない**。huh が最下部に出す help と内容が重なるうえ、1 行ぶん縦に伸びる。
+	//
+	// **Filterable(false)**: 14 個程度に絞り込みは要らず、切ると `/` と esc が空く。
+	// esc を中止に使うために必要（huh は esc をフィルタの設定・解除に割り当てている）。
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewMultiSelect[string]().
+			Title(msg.M.Interactive.SelectTitle).
+			Options(opts...).
+			Filterable(false).
+			Value(&picked),
+	)).WithTheme(theme()).WithKeyMap(keymap())
+	return form, &picked
 }
 
 // desiredOf は「選ばれた名前」を全フラグ分の真偽値へ広げる。

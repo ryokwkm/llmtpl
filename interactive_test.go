@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
 	"github.com/ryokwkm/llmtpl/internal/apply"
@@ -461,6 +462,78 @@ func TestOptionLabel_既定ONの注記は説明より優先(t *testing.T) {
 	if !strings.HasSuffix(got, msg.M.Interactive.DefaultOnNote) {
 		t.Errorf("既定 ON の注記が落ちている: %q", got)
 	}
+}
+
+// 🔴 実機で 3 回「先頭のバンドルが出ない」を出したので、**描画結果そのもの**を見張る。
+// フォームは PTY 無しでは Run できないが、Init → WindowSizeMsg → View なら端末なしで描ける。
+//
+// **どれが ON かで挙動が変わる**のがこの不具合の肝（huh は最初に選択済みの項目まで
+// viewport をスクロールする）ので、ON の位置を振って全パターン見る。
+func TestSelectForm_全バンドルが1画面に出る(t *testing.T) {
+	sizes := []int{1, 2, 5, 14, 30}
+	for _, n := range sizes {
+		for _, onAt := range []int{-1, 0, 1, n / 2, n - 1} {
+			name := fmt.Sprintf("%d 個 / ON=%d", n, onAt)
+			t.Run(name, func(t *testing.T) {
+				items := make([]item, n)
+				for i := range items {
+					// 名前は前方一致しない形にする（"b1" が "b10" に含まれると数え違える）
+					items[i] = item{Name: fmt.Sprintf("[bundle-%02d]", i), Desc: "説明"}
+				}
+				if onAt >= 0 && onAt < n {
+					items[onAt].Effective = true
+				}
+				view := renderForm(t, items, 100, n+10)
+
+				for _, it := range items {
+					if !strings.Contains(view, it.Name) {
+						t.Errorf("%s が描画されていない（ON=%d）\n--- view ---\n%s",
+							it.Name, onAt, stripANSI(view))
+					}
+				}
+			})
+		}
+	}
+}
+
+// 選択済みが後ろの方にあっても先頭は隠れない。
+// 🔴 huh の `Options()` は「最初に選択済みの項目」の**添字をそのまま viewport の YOffset に
+// 代入する**ので、Option.Selected() で初期選択を渡すと**その添字ぶん先頭が切れる**
+// （実機で agenttrail が消えた真因。端末の広さとは無関係）。
+func TestSelectForm_後方が選択済みでも先頭は隠れない(t *testing.T) {
+	items := make([]item, 14)
+	for i := range items {
+		items[i] = item{Name: fmt.Sprintf("[bundle-%02d]", i), Desc: "説明"}
+	}
+	items[13].Effective = true // 最後だけ ON = ずれが最大になる
+
+	view := renderForm(t, items, 100, 40) // 高さは十分（高さの問題ではない）
+	if !strings.Contains(view, items[0].Name) {
+		t.Errorf("先頭が隠れている\n--- view ---\n%s", stripANSI(view))
+	}
+}
+
+// 初期選択が「選ばれた状態」として実際に渡ること（Options → Value の順序が崩れると壊れる）。
+func TestSelectForm_初期選択が渡る(t *testing.T) {
+	items := []item{
+		{Name: "aaa"},
+		{Name: "bbb", Effective: true},
+		{Name: "ccc", Effective: true},
+	}
+	_, picked := selectForm(items, 80)
+	want := []string{"bbb", "ccc"}
+	if !slices.Equal(*picked, want) {
+		t.Errorf("初期選択 = %v, want %v", *picked, want)
+	}
+}
+
+// renderForm は端末なしでフォームを 1 回描く。
+func renderForm(t *testing.T, items []item, width, height int) string {
+	t.Helper()
+	form, _ := selectForm(items, width)
+	form.Init()
+	form.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	return form.View()
 }
 
 // 画面には「esc 中止」と出しているので、そのとおり効くこと。huh の既定は ctrl+c だけで、

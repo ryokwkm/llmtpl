@@ -26,10 +26,11 @@ and all of it leaves — nothing to undo by hand.
 ## Install
 
 ```sh
-brew install ryokwkm/tap/llmtpl
+brew install ryokwkm/tap/llmtpl   # macOS only — the tap ships a cask
 ```
 
-Or download a binary from [Releases](https://github.com/ryokwkm/llmtpl/releases), or with Go:
+On Linux, take `llmtpl_<version>_linux_amd64.tar.gz` (or `_arm64`) from
+[Releases](https://github.com/ryokwkm/llmtpl/releases), or use Go:
 
 ```sh
 go install github.com/ryokwkm/llmtpl@latest   # needs Go 1.24+

@@ -26,10 +26,11 @@ logcheck = true
 ## インストール
 
 ```sh
-brew install ryokwkm/tap/llmtpl
+brew install ryokwkm/tap/llmtpl   # macOS のみ（tap が配るのは cask）
 ```
 
-[Releases](https://github.com/ryokwkm/llmtpl/releases) からバイナリを落としてもよい。Go があるなら:
+Linux では [Releases](https://github.com/ryokwkm/llmtpl/releases) の
+`llmtpl_<version>_linux_amd64.tar.gz`（または `_arm64`）を落とす。Go があるなら:
 
 ```sh
 go install github.com/ryokwkm/llmtpl@latest   # 要 Go 1.24+

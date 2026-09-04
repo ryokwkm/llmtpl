@@ -8,7 +8,7 @@
 
 Turn AI agent config features on and off, one line at a time.
 
-![One line in llmtpl.conf brings a feature's four config files into a project, and takes all of them back out.](assets/demo.gif)
+![Before: one feature's four config files, repeated in every repository — 12 files to put in and take out by hand. After: those four live once in a bundle, and each repository turns the feature on or off with one line of llmtpl.conf.](assets/before-after.svg)
 
 llmtpl manages the config files an **AI coding agent** reads: the instructions file, the long rules it
 points at, hook scripts, and the settings that register them. It keeps everything one feature needs in
@@ -40,6 +40,8 @@ completions (macOS/zsh assumed). `llmtpl completion zsh|bash|fish` prints them i
 
 Everything below runs as written, and the output is real. This README covers getting started; the
 details of the spec, and the reasoning behind them, are in [docs/reference.md](docs/reference.md).
+
+![The same run, recorded: the tree, `llmtpl apply` bringing the feature in, and one line taking all of it back out.](assets/demo.gif)
 
 ### Put one feature in one directory
 
@@ -185,45 +187,18 @@ Undoing four places by hand became **one line**.
 ## Why: one feature, four places
 
 Say you add "check the work log format automatically." Without llmtpl it lands in four separate files.
-(The paths below are Claude Code's. Every agent has its own set, and llmtpl does not care which.)
+(Those paths are Claude Code's. Every agent has its own set, and llmtpl does not care which.)
 
-**Before** — four files per feature, in every repository:
+Putting those four in place is a few lines each. **Taking them back out is the problem** — you undo
+four separate files by hand, and missing one breaks things quietly:
 
-```
-proj-a/.claude/
-├── CLAUDE.md            1. instructions the agent always reads
-├── rules/format.md      2. the long rules (1. is read every time, so keep it short)
-├── hooks/verify.sh      3. a script that runs at a fixed moment
-└── settings.json        4. the registration that says when to run 3.
-
-proj-b/.claude/          ← the same four files, again
-proj-c/.claude/          ← and again
-```
-
-Putting them there is a few lines each. **Removing them is the problem** — you undo four places by
-hand, and missing one breaks things quietly:
-
-- Leave only 1. and **the agent follows a rule that no longer exists**
-- Leave only 3. and 4. and **a check nobody reads runs forever**
+- Leave only the instructions and **the agent follows a rule that no longer exists**
+- Leave only the script and its registration and **a check nobody reads runs forever**
 
 Then do that per repository. It falls apart once you are holding features × repositories in your head.
 
-**After** — the same four files live once, and each repository names the feature in one line:
-
-```
-llm-tpl/logcheck/.claude/      ← one feature, one directory
-├── CLAUDE.md.tmpl             1.
-├── rules/format.md            2.
-├── hooks/verify.sh            3.
-└── settings.json.tmpl         4.
-
-proj-a/llmtpl.conf             logcheck = true
-proj-b/llmtpl.conf             logcheck = true
-proj-c/llmtpl.conf             logcheck = false
-```
-
-Adding the feature is one line, and **removing it is the same one line** — which is the half that is
-hard to get right by hand.
+That is the trade in the picture at the top: the four files live once, and each repository names the
+feature in one line — so putting it in and **taking it out** are the same single line.
 
 Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
 you put in a bundle lands at the same relative place in the target, so the same rules distribute

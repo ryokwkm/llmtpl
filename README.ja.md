@@ -1,47 +1,14 @@
 # llmtpl
 
+[![ci](https://github.com/ryokwkm/llmtpl/actions/workflows/ci.yml/badge.svg)](https://github.com/ryokwkm/llmtpl/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/ryokwkm/llmtpl)](https://github.com/ryokwkm/llmtpl/releases)
+[![license](https://img.shields.io/github/license/ryokwkm/llmtpl)](LICENSE)
+
 [English](README.md) | **日本語**
 
 AI エージェントの設定を、機能ごとに ON / OFF する CLI。
 
 ![llmtpl.conf の 1 行で、機能ぶんの設定 4 ファイルがプロジェクトへ入り、1 行戻すと漏れなく出ていく。](assets/demo.gif)
-
-AI エージェントに機能をひとつ足すと、設定が何か所にも散る — AI への指示・規約・スクリプト・その登録。
-llmtpl は散らばるぶんを**機能ごとのディレクトリ 1 つ**に畳み、設定ファイルの 1 行で出し入れする。
-
-```ini
-logcheck = true
-```
-
-この 1 行で、指示も規約もスクリプトも登録もまとめて入る。`false` に変えれば、まとめて消える。
-
-この README の例はすべて Claude Code だが、仕組みは特定ツールのレイアウトに依存しない。
-バンドルに置いたものが同じ相対位置へ重なるだけなので、`AGENTS.md` や `.cursor/`・`.github/` にも
-同じ規則で配れる（→「覚える言葉は 2 つ、配られ方は 4 通り」）。
-作者は Claude Code + 複数リポジトリ × 14 バンドルで日常運用している。CLI のメッセージは
-日英対応で、ロケールから自動で決まる（→ [reference](docs/reference.ja.md) の「CLI メッセージの言語」）。
-
-この README は「使い始めるまで」を扱う。仕様の細部と、その仕様になっている理由は
-[docs/reference.ja.md](docs/reference.ja.md) にある。
-
-## 機能をひとつ足すと、置き場が種類ごとに散る
-
-エージェントに「作業ログを自動で検証する」機能を足すとする。置き場は 4 か所になる。
-
-```
-.claude/CLAUDE.md      ① AI が常に読む指示
-.claude/rules/         ② 長い規約の本体（① は毎回読まれるので短く保ち、詳細はこちらへ逃がす）
-.claude/hooks/         ③ 決まったタイミングで自動実行されるスクリプト
-.claude/settings.json  ④ ③ をいつ走らせるかの登録
-```
-
-置くだけならどれも数行。問題は**やめるとき**で、この 4 か所を手で戻すことになり、1 か所忘れると事故る。
-
-- ① だけ残ると → **AI が存在しないルールに従おうとする**
-- ③④ だけ残ると → **誰も読まない検証がずっと走り続ける**
-
-しかもこれをリポジトリごとにやる。「この機能はあっちでは要るが、こっちでは要らない」を
-機能 × リポジトリの掛け算で手に持ち始めたあたりで破綻する。
 
 ## インストール
 
@@ -61,7 +28,8 @@ go install github.com/ryokwkm/llmtpl@latest   # 要 Go 1.24+
 
 ## 動かして見る
 
-以下はそのままコピーして動く（出力も実測値）。
+以下はそのままコピーして動く（出力も実測値）。この README は「使い始めるまで」を扱う。
+仕様の細部と、その仕様になっている理由は [docs/reference.ja.md](docs/reference.ja.md) にある。
 
 ### 置く — 散らばる 4 つを、1 つのディレクトリに入れる
 
@@ -201,6 +169,54 @@ $ llmtpl apply
 `{"model": "opus"}` だけに戻り、symlink も 2 本とも外れる。**プロジェクト固有の内容はそのまま残る。**
 
 冒頭の「4 か所を手で戻して回る」が、**1 行の書き換え**になった。
+
+## なぜ要るか — 機能ひとつで、置き場が種類ごとに散る
+
+AI エージェントに機能をひとつ足すと、設定が何か所にも散る —— AI への指示・規約・スクリプト・その登録。
+「作業ログを自動で検証する」を足すとこうなる。
+
+**Before** —— 1 機能ぶんの 4 ファイルが、リポジトリごとに要る:
+
+```
+proj-a/.claude/
+├── CLAUDE.md            ① AI が常に読む指示
+├── rules/format.md      ② 長い規約の本体（① は毎回読まれるので短く保つ）
+├── hooks/verify.sh      ③ 決まったタイミングで自動実行されるスクリプト
+└── settings.json        ④ ③ をいつ走らせるかの登録
+
+proj-b/.claude/          ← 同じ 4 つを、もう一度
+proj-c/.claude/          ← さらにもう一度
+```
+
+置くだけならどれも数行。問題は**やめるとき**で、この 4 か所を手で戻すことになり、1 か所忘れると事故る。
+
+- ① だけ残ると → **AI が存在しないルールに従おうとする**
+- ③④ だけ残ると → **誰も読まない検証がずっと走り続ける**
+
+しかもこれをリポジトリごとにやる。「この機能はあっちでは要るが、こっちでは要らない」を
+機能 × リポジトリの掛け算で手に持ち始めたあたりで破綻する。
+
+**After** —— 同じ 4 ファイルの実体は 1 つきりで、リポジトリ側は 1 行で名指すだけ:
+
+```
+llm-tpl/logcheck/.claude/      ← 1 機能 = 1 ディレクトリ
+├── CLAUDE.md.tmpl             ①
+├── rules/format.md            ②
+├── hooks/verify.sh            ③
+└── settings.json.tmpl         ④
+
+proj-a/llmtpl.conf             logcheck = true
+proj-b/llmtpl.conf             logcheck = true
+proj-c/llmtpl.conf             logcheck = false
+```
+
+この 1 行で、指示も規約もスクリプトも登録もまとめて入る。`false` に変えれば、まとめて消える。
+
+この README の例はすべて Claude Code だが、仕組みは特定ツールのレイアウトに依存しない。
+バンドルに置いたものが同じ相対位置へ重なるだけなので、`AGENTS.md` や `.cursor/`・`.github/` にも
+同じ規則で配れる（→「覚える言葉は 2 つ、配られ方は 4 通り」）。
+作者は Claude Code + 複数リポジトリ × 14 バンドルで日常運用している。CLI のメッセージは
+日英対応で、ロケールから自動で決まる（→ [reference](docs/reference.ja.md) の「CLI メッセージの言語」）。
 
 ## それ、Stow でよくない？
 

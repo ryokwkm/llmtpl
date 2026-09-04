@@ -1,48 +1,14 @@
 # llmtpl
 
+[![ci](https://github.com/ryokwkm/llmtpl/actions/workflows/ci.yml/badge.svg)](https://github.com/ryokwkm/llmtpl/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/ryokwkm/llmtpl)](https://github.com/ryokwkm/llmtpl/releases)
+[![license](https://img.shields.io/github/license/ryokwkm/llmtpl)](LICENSE)
+
 **English** | [日本語](README.ja.md)
 
 Turn AI agent config features on and off, one line at a time.
 
 ![One line in llmtpl.conf brings a feature's four config files into a project, and takes all of them back out.](assets/demo.gif)
-
-Add one feature to an AI agent and the config scatters: instructions for the agent, the rules
-they point at, a script, and the registration that runs it. llmtpl folds each feature into **one
-directory** and puts it in or takes it out with a single line in a config file.
-
-```ini
-logcheck = true
-```
-
-That one line brings in the instructions, the rules, the script, and the registration. Flip it to
-`false` and all of it leaves.
-
-Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
-you put in a bundle lands at the same relative place in the target, so the same rules distribute
-`AGENTS.md`, `.cursor/`, or `.github/`. The author runs it daily across several repositories with
-fourteen bundles.
-
-This README covers getting started. The details of the spec, and the reasoning behind them, are in
-[docs/reference.md](docs/reference.md).
-
-## One feature, four places
-
-Say you add "check the work log format automatically." It lands in four places:
-
-```
-.claude/CLAUDE.md      1. instructions the agent always reads
-.claude/rules/         2. the long rules (1. is read every time, so keep it short and put detail here)
-.claude/hooks/         3. a script that runs at a fixed moment
-.claude/settings.json  4. the registration that says when to run 3.
-```
-
-Putting them there is a few lines each. **Removing them is the problem** — you undo four places by
-hand, and missing one breaks things quietly:
-
-- Leave only 1. and **the agent follows a rule that no longer exists**
-- Leave only 3. and 4. and **a check nobody reads runs forever**
-
-Then do that per repository. It falls apart once you are holding features × repositories in your head.
 
 ## Install
 
@@ -61,7 +27,8 @@ completions (macOS/zsh assumed). `llmtpl completion zsh|bash|fish` prints them i
 
 ## Try it
 
-Everything below runs as written, and the output is real.
+Everything below runs as written, and the output is real. This README covers getting started; the
+details of the spec, and the reasoning behind them, are in [docs/reference.md](docs/reference.md).
 
 ### Put the four in one directory
 
@@ -198,6 +165,55 @@ Exactly what was added is subtracted. The "Work log checks" section leaves `CLAU
 the project stays.**
 
 Undoing four places by hand became **one line**.
+
+## Why: one feature, four places
+
+Add one feature to an AI agent and the config scatters: instructions for the agent, the rules they
+point at, a script, and the registration that runs it. Say you add "check the work log format
+automatically."
+
+**Before** — four files per feature, in every repository:
+
+```
+proj-a/.claude/
+├── CLAUDE.md            1. instructions the agent always reads
+├── rules/format.md      2. the long rules (1. is read every time, so keep it short)
+├── hooks/verify.sh      3. a script that runs at a fixed moment
+└── settings.json        4. the registration that says when to run 3.
+
+proj-b/.claude/          ← the same four files, again
+proj-c/.claude/          ← and again
+```
+
+Putting them there is a few lines each. **Removing them is the problem** — you undo four places by
+hand, and missing one breaks things quietly:
+
+- Leave only 1. and **the agent follows a rule that no longer exists**
+- Leave only 3. and 4. and **a check nobody reads runs forever**
+
+Then do that per repository. It falls apart once you are holding features × repositories in your head.
+
+**After** — the same four files live once, and each repository names the feature in one line:
+
+```
+llm-tpl/logcheck/.claude/      ← one feature, one directory
+├── CLAUDE.md.tmpl             1.
+├── rules/format.md            2.
+├── hooks/verify.sh            3.
+└── settings.json.tmpl         4.
+
+proj-a/llmtpl.conf             logcheck = true
+proj-b/llmtpl.conf             logcheck = true
+proj-c/llmtpl.conf             logcheck = false
+```
+
+That one line brings in the instructions, the rules, the script, and the registration. Flip it to
+`false` and all of it leaves.
+
+Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
+you put in a bundle lands at the same relative place in the target, so the same rules distribute
+`AGENTS.md`, `.cursor/`, or `.github/`. The author runs it daily across several repositories with
+fourteen bundles.
 
 ## Isn't this just Stow?
 

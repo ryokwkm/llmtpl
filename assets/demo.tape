@@ -12,8 +12,11 @@ Require tree
 
 Set Shell bash
 Set FontSize 22
-Set Width 1200
-Set Height 700
+# Width は `linked .claude/hooks/verify.sh -> ../../../…/verify.sh` が折り返さない幅で決めている
+# （約 84 セル要る）。実測で 1 セル ≒ 14.3px 幅 / 25.5px 高なので、桁は (Width-40)/14.3、
+# 行は (Height-40)/25.5。いま最も縦を使うのはカット①の 18 行。
+Set Width 1360
+Set Height 600
 Set Padding 20
 Set TypingSpeed 75ms
 Set Framerate 24

@@ -4,6 +4,8 @@
 
 Turn AI agent config features on and off, one line at a time.
 
+![One line in llmtpl.conf brings a feature's four config files into a project, and takes all of them back out.](assets/demo.gif)
+
 Add one feature to an AI agent and the config scatters: instructions for the agent, the rules
 they point at, a script, and the registration that runs it. llmtpl folds each feature into **one
 directory** and puts it in or takes it out with a single line in a config file.

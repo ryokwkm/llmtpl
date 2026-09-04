@@ -1,11 +1,14 @@
 # examples
 
-README に載せていない使い方のサンプル。**どれも上級の逃げ道**で、基本の使い方は
-リポジトリルートの `README.ja.md` にある。
+**English** | [日本語](README.ja.md)
 
-各ディレクトリはそれ単体で動く（`--tpl-home ./llm-tpl` を渡して `apply` する）。
-出力は `expected-*.md` に固定してあり、`go test ./...` が実物を実行して照合するので腐らない。
+Ways of using llmtpl that the main README leaves out. **Every one of them is an advanced escape
+hatch** — for the ordinary way, see the [README](../README.md).
 
-| | 何ができるか |
+Each directory runs on its own: pass `--tpl-home ./llm-tpl` to `apply`. The output is pinned in
+`expected-*.md`, and `go test ./...` runs the real thing and compares against it, so these cannot go
+stale.
+
+| | What it buys you |
 |---|---|
-| [named-blocks](named-blocks/) | 1 つのバンドルから複数の断片を、ターゲットの好きな場所へ差し込む |
+| [named-blocks](named-blocks/) | send several fragments from one bundle to places of the target's choosing |

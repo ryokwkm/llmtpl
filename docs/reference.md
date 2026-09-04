@@ -126,6 +126,11 @@ GitHub Actions' `${{ }}`, for instance — stops with a parse error. Nothing is 
 Flags arrive as **the set of every bundle name**, so `{{if}}` can reference a bundle that no conf
 mentions (its value is false). Only a name that does not exist at all is an error.
 
+`partials/` can also hold **named blocks**, which let one bundle send several fragments to places the
+target chooses. [examples/named-blocks](../examples/named-blocks/) is a worked, tested example —
+including the one trap: **wrap every `{{template}}` call in `{{if}}`**, or turning that flag off makes
+`apply` fail for the target and every target after it.
+
 **The leading newline of a fragment is the author's decision.** A fragment starting with `## Heading`
 should carry one blank line at the front (without it the heading butts against the preceding bullet
 list). A fragment meant to continue the previous list should not. The engine normalizes trailing

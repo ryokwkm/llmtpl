@@ -1,74 +1,77 @@
-# 名前付きブロック — 1 バンドルから複数の断片を、好きな場所へ
+# Named blocks — several fragments from one bundle, each to a place you choose
 
-**これは上級の逃げ道です。** 既定のやり方（バンドル直下に `CLAUDE.md.tmpl` を置く）で足りるなら、
-そちらを使ってください。README には載せていません。
+**English** | [日本語](README.ja.md)
 
-## 何ができるか
+**This is an advanced escape hatch.** If the default (a `CLAUDE.md.tmpl` at the bundle root) is
+enough, use that. The main README does not cover this.
 
-既定では、1 バンドルが CLAUDE.md へ寄稿できる断片は **1 つだけ**（`<バンドル>/CLAUDE.md.tmpl`）で、
-差し込み先も 1 か所です（受け口 `{{- slot "<バンドル名>"}}`、無ければ末尾）。
+## What it buys you
 
-「文体の規約は開発の節へ、用語の規約はテストの節へ」のように、**1 つのバンドルから複数の断片を
-別々の場所へ**入れたいときは、`partials/` に名前付きブロックを定義してターゲット側から呼びます。
+By default a bundle contributes **one** fragment to `CLAUDE.md` (`<bundle>/CLAUDE.md.tmpl`), and it
+lands in one place (the slot `{{- slot "<bundle name>"}}`, or the end of the file if there is none).
+
+When you want **several fragments from one bundle to land in different places** — the tone rules in
+the development section, the vocabulary rules in the testing section — define named blocks under
+`partials/` and call them from the target.
 
 ```
 llm-tpl/styleguide/
   bundle.conf
   partials/blocks.tmpl      ← {{define "styleguide/tone"}} … {{end}}
-proj/.claude/
+proj/
   llmtpl.conf               ← styleguide = true
-  CLAUDE.md.tmpl            ← {{- if .styleguide}}{{template "styleguide/tone" .}}{{end}}
+  .claude/CLAUDE.md.tmpl    ← {{- if .styleguide}}{{template "styleguide/tone" .}}{{end}}
 ```
 
-ブロック名に**バンドル名を接頭辞として付けておく**と、複数のバンドルが `partials/` を持っても
-名前が衝突しません。これが実質的な名前空間になります。
+**Prefix block names with the bundle name.** That keeps two bundles with `partials/` from colliding,
+and is the closest thing to a namespace here.
 
-このバンドルは `CLAUDE.md.tmpl` を持ちません。`partials/` だけを持つバンドルでも、
-ON になっていればブロックはターゲットから見えます。
+This bundle has no `CLAUDE.md.tmpl`. A bundle that carries only `partials/` still exposes its blocks
+to the target, as long as the flag is ON.
 
-## 試す
+## Try it
 
 ```sh
 cd examples/named-blocks
-llmtpl apply --tpl-home ./llm-tpl proj/.claude
-cat proj/.claude/CLAUDE.md          # → expected-on.md と同じ本文
+llmtpl apply --tpl-home ./llm-tpl proj
+cat proj/.claude/CLAUDE.md          # → expected-on.md, plus the GENERATED marker on line 1
 
-sed -i '' 's/true/false/' proj/.claude/llmtpl.conf
-llmtpl apply --tpl-home ./llm-tpl proj/.claude
-cat proj/.claude/CLAUDE.md          # → expected-off.md と同じ本文
+echo 'styleguide = false' > proj/llmtpl.conf
+llmtpl apply --tpl-home ./llm-tpl proj
+cat proj/.claude/CLAUDE.md          # → expected-off.md, plus the marker
 ```
 
-## ⚠️ 必ず `{{if}}` で包むこと
+## ⚠️ Always wrap the call in `{{if}}`
 
-**これが唯一にして最大の落とし穴です。**
+**This is the one trap, and it is the big one.**
 
-`{{template "styleguide/tone" .}}` を裸で書くと、フラグを OFF にした瞬間に
-`apply` が**丸ごと失敗します**（そのターゲットだけでなく、以降のターゲットも処理されません）。
+Write `{{template "styleguide/tone" .}}` bare and turning the flag off makes `apply` **fail
+outright** — not only for that target, but for every target after it.
 
 ```
-llmtpl: テンプレートの評価に失敗: template "styleguide/tone" not defined
+llmtpl: cannot evaluate template (possibly a reference to an undefined flag): template: CLAUDE.md.tmpl:4:11: executing "CLAUDE.md.tmpl" at <{{template "styleguide/tone" .}}>: template "styleguide/tone" not defined
 ```
 
-ブロックの定義はバンドルが ON のときしか読み込まれないのに、`{{template}}` は
-定義が無いとエラーになるためです。受け口（`slot`）は寄稿が無ければ空文字を返すので
-この問題が起きません —— **既定のやり方が受け口である理由がこれです。**
+Block definitions are only loaded while the bundle is ON, and `{{template}}` is an error when the
+definition is missing. A slot returns an empty string when nobody contributes, which is why it never
+has this problem — **and why the slot is the default.**
 
-`{{- if .styleguide}}` で包めば、OFF のとき呼び出し自体が評価されないので安全に消えます。
-この例はそう書いてあります。
+Wrap it in `{{- if .styleguide}}` and the call is not evaluated at all when the flag is off, so it
+disappears safely. That is how this example is written.
 
-## バンドル名にハイフンがあるとき
+## When the bundle name has a hyphen
 
-`{{if .auto-sync}}` は Go のテンプレートでは書けません（`bad character U+002D`）。
-その場合は `{{if index . "auto-sync"}}` と書きます。
+`{{if .auto-sync}}` is not valid in Go templates (`bad character U+002D`). Write
+`{{if index . "auto-sync"}}` instead.
 
-## 受け口とどちらを使うか
+## Which one should you use?
 
-| | 受け口（既定） | 名前付きブロック |
+| | Slot (the default) | Named blocks |
 |---|---|---|
-| 1 バンドルから寄稿できる断片 | 1 つ | いくつでも |
-| 差し込む場所 | 1 か所（受け口か末尾） | 好きなだけ |
-| OFF にしたとき | 何も起きない | **`{{if}}` を忘れると apply が落ちる** |
-| ターゲット側に要るもの | `{{- slot "名前"}}` 1 行（省略可） | `{{if}}` + `{{template}}` |
+| Fragments one bundle can contribute | one | as many as you like |
+| Where they land | one place (the slot, or the end) | anywhere you like |
+| When the flag goes off | nothing happens | **forget the `{{if}}` and `apply` breaks** |
+| What the target needs | one `{{- slot "name"}}` line (optional) | `{{if}}` + `{{template}}` |
 
-**迷ったら受け口。** 「1 バンドルの内容を、離れた複数の場所へ配りたい」という要求が実際に出てから、
-こちらへ来てください。
+**When in doubt, use the slot.** Come here once you actually have the requirement: one bundle's
+content has to reach several places that are far apart.

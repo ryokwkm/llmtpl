@@ -10,6 +10,17 @@ Turn AI agent config features on and off, one line at a time.
 
 ![One line in llmtpl.conf brings a feature's four config files into a project, and takes all of them back out.](assets/demo.gif)
 
+llmtpl manages the config files an **AI coding agent** reads: the instructions file, the long rules it
+points at, hook scripts, and the settings that register them. It keeps everything one feature needs in
+**one directory**, and every repository turns that feature on or off with a single line.
+
+```ini
+logcheck = true
+```
+
+That line brings in the instructions, the rules, the script, and the registration. Flip it to `false`
+and all of it leaves — nothing to undo by hand.
+
 ## Install
 
 ```sh
@@ -30,7 +41,11 @@ completions (macOS/zsh assumed). `llmtpl completion zsh|bash|fish` prints them i
 Everything below runs as written, and the output is real. This README covers getting started; the
 details of the spec, and the reasoning behind them, are in [docs/reference.md](docs/reference.md).
 
-### Put the four in one directory
+### Put one feature in one directory
+
+A one-feature directory is a **bundle**; a project that receives config is a **target**. Those are the
+only two words. The directory name — `logcheck` — becomes the flag name, so creating a directory
+creates a flag; there is no registry to update.
 
 ```
 demo/
@@ -48,9 +63,8 @@ demo/
         └── settings.json.tmpl         proj's own settings
 ```
 
-That one-feature directory is a **bundle**; the receiving `proj/` is a **target**. Those are the only
-two words. `logcheck` — the directory name — becomes the flag name; there is no registry to update.
-Create a directory and a flag by that name exists.
+<details>
+<summary><b>The commands that build this tree</b> — copy-paste them, or just read on</summary>
 
 ```sh
 mkdir -p demo/llm-tpl/logcheck/.claude/rules demo/llm-tpl/logcheck/.claude/hooks demo/proj/.claude
@@ -85,6 +99,8 @@ printf 'logcheck = true\n' > proj/llmtpl.conf
 printf '# Instructions for proj\n\n- Write it in Go.\n' > proj/.claude/CLAUDE.md.tmpl
 printf '{"model": "opus"}\n' > proj/.claude/settings.json.tmpl
 ```
+
+</details>
 
 ### Turn it on
 
@@ -168,9 +184,8 @@ Undoing four places by hand became **one line**.
 
 ## Why: one feature, four places
 
-Add one feature to an AI agent and the config scatters: instructions for the agent, the rules they
-point at, a script, and the registration that runs it. Say you add "check the work log format
-automatically."
+Say you add "check the work log format automatically." Without llmtpl it lands in four separate files.
+(The paths below are Claude Code's. Every agent has its own set, and llmtpl does not care which.)
 
 **Before** — four files per feature, in every repository:
 
@@ -207,8 +222,8 @@ proj-b/llmtpl.conf             logcheck = true
 proj-c/llmtpl.conf             logcheck = false
 ```
 
-That one line brings in the instructions, the rules, the script, and the registration. Flip it to
-`false` and all of it leaves.
+Adding the feature is one line, and **removing it is the same one line** — which is the half that is
+hard to get right by hand.
 
 Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
 you put in a bundle lands at the same relative place in the target, so the same rules distribute
@@ -270,7 +285,7 @@ Backing out takes two steps. Set every flag to `false` and `apply` (all symlinks
 returns to what is project-specific), then `mv .claude/CLAUDE.md.tmpl .claude/CLAUDE.md` (the source
 overwrites the generated file, marker and all). Nothing has to be deleted by hand.
 
-## Two words, four ways to land
+## What lands where
 
 **Bundle** — one directory at `<bundle root>/<flag name>/`, holding one feature. **Its inside has the
 same shape as a project.** What you put there lands at the same place.

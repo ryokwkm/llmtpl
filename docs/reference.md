@@ -230,6 +230,29 @@ targets that place a `*.json.tmpl`), so the safe move is to leave it alone until
    `GENERATED` header is relative to the root** (so it starts outside the target). This holds whether
    you point at it with `--tpl-home`, `$LLMTPL_HOME`, or `bundle_root`
 
+### After a clone
+
+Commit the generated files; **`.gitignore` the symlinks**. git can store a symlink as the string of
+its target, so committing one hands anyone who clones without llmtpl a link with nothing behind it.
+
+That means the hook *registration* reaches everyone through `settings.json` while the script itself
+does not. Measured, not guessed: with the registration in place and `.claude/hooks/` empty, a Claude
+Code round trip **succeeds** — it answers, exits 0, and writes nothing to stderr. The only sign is
+one collapsed notification per response.
+
+```json
+{"type":"system","subtype":"notification","key":"stop-hook-error",
+ "text":"Stop hook error occurred · ctrl+o to see","priority":"immediate"}
+```
+
+So the check silently never runs while everything looks fine — the mirror image of "leave only the
+script and its registration and a check nobody reads runs forever," and harder to notice, because
+nothing runs at all.
+
+Put **"run `llmtpl apply` once after cloning"** in the repository's setup steps. Keeping the bundle
+directory inside the repository (`llm-tpl/`) is the cheapest fix: the bundles arrive with the clone,
+so a single `apply` finishes it.
+
 ### Constraints
 
 - Only `.md` and `.json` are generated (other extensions are skipped and reported)

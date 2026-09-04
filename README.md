@@ -232,7 +232,8 @@ Three things had to happen above:
 
 1. **Distribute and remove whole files and directories** (`hooks/verify.sh`, `rules/`)
 2. **Insert and remove a few lines inside one file** (`CLAUDE.md`)
-3. **Let several features write to different keys of one JSON** (`settings.json`)
+3. **Merge different keys of one JSON from separate sources** — the bundle's `hooks` and the
+   project's own `model` in `settings.json` (several features writing to it work the same way)
 
 GNU Stow does 1. only, and never goes below the file. chezmoi reaches 2., but its unit is "one source
 → one destination," so the branching collects on the destination file rather than on the feature.
@@ -301,12 +302,12 @@ are all in the [reference](docs/reference.md). None of them are needed to get go
 
 | Command | What it does |
 |---|---|
-| `llmtpl` | pick a target, tick its flags in a checkbox list, then apply (the pick is skipped with a single target). Prints the help instead when it is not run from a terminal |
+| `llmtpl` | interactive mode — pick a target, tick its flags, apply (see below). Prints the help instead when it is not run from a terminal |
 | `llmtpl apply [dir...]` | generate and link (defaults to the current directory and below) |
 | `llmtpl apply --dry-run` | print what would be written and removed, then stop |
 | `llmtpl check [dir...]` | check that generated files are current. **Exit 2 on differences** (for CI and hooks) |
 | `llmtpl status [dir...]` | a target × flag matrix of effective values |
-| `llmtpl bundles` | list bundles, with the description from `bundle.conf` |
+| `llmtpl bundles` | list bundles, each with its description (from an optional `bundle.conf` inside it) |
 
 `llmtpl <cmd> --help` is authoritative for options. Exit codes: **0 fine, 1 error, 2 `check` found
 differences, 130 the interactive mode was aborted**.
@@ -317,10 +318,9 @@ of the flags currently ON), edit its flags, apply, and return to the list. It re
 values of the lines it has to touch**, so the comments around your flags survive. Details are in
 the [reference](docs/reference.md#interactive-mode).
 
-The bundle directory is **found by walking up** from each target, so keeping `llm-tpl/` somewhere
-above them means writing nothing. If it lives elsewhere, name the path with the reserved
-`bundle_root` key in `llmtpl.conf`. Search scope, resolution order, and the details of `bundle_root`
-are in the [reference](docs/reference.md).
+If the bundle directory does not sit somewhere above your projects, name its path with the reserved
+`bundle_root` key in `llmtpl.conf`. Search scope, the full resolution order, and the details of
+`bundle_root` are in the [reference](docs/reference.md).
 
 ## Before you rely on it
 
@@ -330,6 +330,10 @@ are in the [reference](docs/reference.md).
   `--dry-run` shows it. To keep a literal `{{`, write `{{"{{"}}`
 - **Hand edits to a generated file are lost on the next apply** (they are not archived). Edit the
   `*.tmpl` source instead
+- **A fresh clone needs one `llmtpl apply`.** The symlinks are gitignored, so a teammate gets the
+  hook registration without the script — and Claude Code then **fails silently** (it answers, exits
+  0, and shows only a collapsed notification). Keeping `llm-tpl/` inside the repository makes this
+  one step
 
 The archiving mechanism, the cost of generating into `~/.claude`, the full list of what is not
 guaranteed, the constraints, and what happens to a teammate who clones are all in the

@@ -117,9 +117,9 @@ bundle root: /path/to/demo/llm-tpl (found by walking up)
   🔗 linked .claude/rules/logcheck -> ../../../llm-tpl/logcheck/.claude/rules
 ```
 
-Run it **inside your own project** — the default is the current directory and everything under it.
-The bundle directory is found by walking up, so you never pass a path. `llmtpl apply --dry-run`
-shows the plan without writing.
+- Run it **inside your own project** — the default is the current directory and everything under it
+- The bundle directory is **found by walking up**, so you never pass a path
+- `llmtpl apply --dry-run` shows the plan without writing
 
 All four landed. The generated `CLAUDE.md` is the base with the bundle's instructions appended
 (line 1 is a marker llmtpl adds):
@@ -186,6 +186,26 @@ the project stays.**
 
 Undoing four places by hand became **one line**.
 
+## Adding it to a repository you already have
+
+If the repository already has `CLAUDE.md` and `settings.json`, it takes five steps.
+
+1. **Rename** `.claude/CLAUDE.md` → `.claude/CLAUDE.md.tmpl` and `.claude/settings.json` → `.claude/settings.json.tmpl`
+2. Put `llmtpl.conf` at the **repository root** with a line per bundle you want (that file is what marks a target)
+3. `llmtpl apply --dry-run` to see the plan
+4. `llmtpl apply` if it looks right
+5. Add the new symlinks to `.gitignore` — committed symlinks become dangling for anyone who clones without llmtpl
+
+Add `.archive/` and `.llmtpl-state.json` to `.gitignore` too. The **generated files themselves are
+worth committing**: flipping a flag becomes a reviewable diff, and you can run `llmtpl check` in CI.
+
+Backing out takes two steps, and neither deletes anything by hand.
+
+1. Set every flag to `false` and `apply` — all symlinks come out, and each body returns to what is
+   specific to the project
+2. `mv .claude/CLAUDE.md.tmpl .claude/CLAUDE.md` — the source overwrites the generated file, marker
+   and all
+
 ## Why: one feature, four places
 
 Say you add "check the work log format automatically." Without llmtpl it lands in four separate files.
@@ -243,23 +263,6 @@ proj-c  ON     -
 
 This pays off once it multiplies. Somewhere around three features across five repositories, the
 table stops fitting in your head.
-
-## Adding it to a repository you already have
-
-If the repository already has `CLAUDE.md` and `settings.json`, it takes five steps.
-
-1. **Rename** `.claude/CLAUDE.md` → `.claude/CLAUDE.md.tmpl` and `.claude/settings.json` → `.claude/settings.json.tmpl`
-2. Put `llmtpl.conf` at the **repository root** with a line per bundle you want (that file is what marks a target)
-3. `llmtpl apply --dry-run` to see the plan
-4. `llmtpl apply` if it looks right
-5. Add the new symlinks to `.gitignore` — committed symlinks become dangling for anyone who clones without llmtpl
-
-Add `.archive/` and `.llmtpl-state.json` to `.gitignore` too. The **generated files themselves are
-worth committing**: flipping a flag becomes a reviewable diff, and you can run `llmtpl check` in CI.
-
-Backing out takes two steps. Set every flag to `false` and `apply` (all symlinks come out, the body
-returns to what is project-specific), then `mv .claude/CLAUDE.md.tmpl .claude/CLAUDE.md` (the source
-overwrites the generated file, marker and all). Nothing has to be deleted by hand.
 
 ## What lands where
 

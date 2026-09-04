@@ -118,9 +118,9 @@ $ cd proj && llmtpl apply
   🔗 リンク .claude/rules/logcheck -> ../../../llm-tpl/logcheck/.claude/rules
 ```
 
-叩く場所は**自分のプロジェクトの中**（既定は cwd とその配下）。バンドル置き場は親を辿って
-自動で見つかるので、場所を渡す必要はない。先に `llmtpl apply --dry-run` を叩けば、書き込まずに
-予定だけ見られる。
+- 叩く場所は**自分のプロジェクトの中**（既定は cwd とその配下）
+- バンドル置き場は**親を辿って自動で見つかる**ので、場所を渡す必要はない
+- 先に `llmtpl apply --dry-run` を叩けば、書き込まずに予定だけ見られる
 
 4 つとも入った。生成された `CLAUDE.md` は、ベースの後ろにバンドルの指示が足された形になる
 （1 行目は llmtpl が入れる生成マーカ）。
@@ -186,6 +186,26 @@ $ llmtpl apply
 
 4 か所を手で戻して回る作業が、**1 行の書き換え**になった。
 
+## いま使っているリポジトリへ入れる
+
+すでに `CLAUDE.md` と `settings.json` があるリポジトリなら、5 手で終わる。
+
+1. `.claude/CLAUDE.md` → `.claude/CLAUDE.md.tmpl`、`.claude/settings.json` → `.claude/settings.json.tmpl` に**リネーム**
+2. **リポジトリのルート**に `llmtpl.conf` を置き、要るバンドルを 1 行書く（それがターゲットの目印になる）
+3. `llmtpl apply --dry-run` で予定を見る
+4. 問題なければ `llmtpl apply`
+5. 張られた symlink を `.gitignore` に足す（コミットすると、llmtpl を持っていない人が clone したとき
+   実体の無いリンクになる）
+
+`.gitignore` には `.archive/` と `.llmtpl-state.json` も入れる。一方で**生成物（`CLAUDE.md` 等）は
+git 管理下に置くことを推奨する** — フラグの切り替えがレビュー可能な diff になり、`llmtpl check` を
+CI に置けるようになる。
+
+やめたくなったら 2 手で完全に戻れる。どちらも手作業で消して回るところは無い。
+
+1. フラグを全部 `false` にして `apply` —— symlink が全部外れ、本文がプロジェクト固有の内容だけに戻る
+2. `mv .claude/CLAUDE.md.tmpl .claude/CLAUDE.md` —— 原本で生成物ごと上書きし、生成マーカも消える
+
 ## なぜ要るか — 機能ひとつで、置き場が種類ごとに散る
 
 「作業ログを自動で検証する」を足すとする。llmtpl が無ければ 4 つのファイルに分かれる
@@ -245,25 +265,6 @@ proj-c      ON     -
 
 効いてくるのは掛け算になってからだ。機能 3 つ × リポジトリ 5 つを手で持ち始めたあたりから、
 この表が頭の中に無くなる。
-
-## いま使っているリポジトリへ入れる
-
-すでに `CLAUDE.md` と `settings.json` があるリポジトリなら、5 手で終わる。
-
-1. `.claude/CLAUDE.md` → `.claude/CLAUDE.md.tmpl`、`.claude/settings.json` → `.claude/settings.json.tmpl` に**リネーム**
-2. **リポジトリのルート**に `llmtpl.conf` を置き、要るバンドルを 1 行書く（それがターゲットの目印になる）
-3. `llmtpl apply --dry-run` で予定を見る
-4. 問題なければ `llmtpl apply`
-5. 張られた symlink を `.gitignore` に足す（コミットすると、llmtpl を持っていない人が clone したとき
-   実体の無いリンクになる）
-
-`.gitignore` には `.archive/` と `.llmtpl-state.json` も入れる。一方で**生成物（`CLAUDE.md` 等）は
-git 管理下に置くことを推奨する** — フラグの切り替えがレビュー可能な diff になり、`llmtpl check` を
-CI に置けるようになる。
-
-やめたくなったら 2 手で完全に戻れる。①フラグを全部 `false` にして `apply`（symlink が全部外れ、
-本文がプロジェクト固有の内容だけに戻る）②`mv .claude/CLAUDE.md.tmpl .claude/CLAUDE.md`（原本で
-生成物ごと上書きし、生成マーカも消える）。手作業で消して回るところは無い。
 
 ## 何がどこへ配られるか
 

@@ -12,7 +12,9 @@ Turn AI agent config features on and off, one line at a time.
 
 llmtpl manages the config files an **AI coding agent** reads: the instructions file, the long rules it
 points at, hook scripts, and the settings that register them. It keeps everything one feature needs in
-**one directory**, and every repository turns that feature on or off with a single line.
+**one directory**, and every repository turns that feature on or off with a single line. Every example
+here uses Claude Code, but nothing depends on that layout — `AGENTS.md`, `.cursor/`, and `.github/`
+travel by the same rules.
 
 ```ini
 logcheck = true
@@ -40,8 +42,6 @@ completions (macOS/zsh assumed). `llmtpl completion zsh|bash|fish` prints them i
 
 Everything below runs as written, and the output is real. This README covers getting started; the
 details of the spec, and the reasoning behind them, are in [docs/reference.md](docs/reference.md).
-
-![The same run, recorded: the tree, `llmtpl apply` bringing the feature in, and one line taking all of it back out.](assets/demo.gif)
 
 ### Put one feature in one directory
 
@@ -182,6 +182,8 @@ Exactly what was added is subtracted. The "Work log checks" section leaves `CLAU
 `settings.json` returns to `{"model": "opus"}`, and both symlinks come out. **Everything specific to
 the project stays.**
 
+![The whole cycle, recorded: the tree, `llmtpl apply` bringing the feature in, and this one line taking all of it back out.](assets/demo.gif)
+
 Undoing four places by hand became **one line**.
 
 ## Why: one feature, four places
@@ -197,12 +199,11 @@ four separate files by hand, and missing one breaks things quietly:
 
 Then do that per repository. It falls apart once you are holding features × repositories in your head.
 
-That is the trade in the picture at the top: the four files live once, and each repository names the
-feature in one line — so putting it in and **taking it out** are the same single line.
+The picture at the top is that trade: the four files live once, and the per-repository decision
+shrinks to one line each.
 
-Every example here uses Claude Code, but nothing in the mechanism depends on that layout. Whatever
-you put in a bundle lands at the same relative place in the target, so the same rules distribute
-`AGENTS.md`, `.cursor/`, or `.github/`. The author runs it daily across several repositories with
+Whatever you put in a bundle lands at the same relative place in the target, which is what makes the
+same rules work for any agent's layout. The author runs it daily across several repositories with
 fourteen bundles.
 
 ## Isn't this just Stow?
